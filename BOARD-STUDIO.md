@@ -8,7 +8,9 @@
 
 尚在开发：独立生图/图片编辑 API、参考图生成多个候选、素材版本管理、字体文件导入、PDF 印前验证。现有模型设置入口用于设计对话，不代表生图 API 已接通。
 
-桌面交付：GitHub Actions 的 `Board Studio Windows` 工作流从当前开发分支构建 Windows x64 安装包，产物名为 `Board-Studio-Windows-x64`。安装后从开始菜单打开 **Board Studio**，新建文件即可看到编辑器右侧的“展板工作台”。应用内嵌编辑器，不需要启动本地网页服务。程序使用独立应用标识，关闭上游自动更新；系统凭据存储暂时沿用上游实现。
+交付约定：开发阶段默认交付本地免安装文件夹 `F:\freegpt6\REA\Board-Studio-Portable`，双击 `BoardStudio.exe` 使用。只有用户明确要求发布时，才制作安装包；不进行多份备份或反复验证测试。
+
+桌面构建：GitHub Actions 的 `Board Studio Windows` 工作流默认只编译 Windows x64 程序，产物名为 `Board-Studio-Portable-Windows-x64`；下载并解压后就是免安装文件夹。新建文件即可看到编辑器右侧的“展板工作台”。应用内嵌编辑器，不需要启动本地网页服务。设置和缓存仍使用 Windows 用户数据目录。程序使用独立应用标识，关闭上游自动更新；系统凭据存储暂时沿用上游实现。手动触发工作流时，只有明确勾选 `release_installer` 才会额外生成安装包。
 
 使用步骤：新建 A3 横版或竖版 → 放入图片并添加真实文字图层 → 选择文字、分组或整板，选择字体并点击“应用字体” → 点击“导出 PNG/JPG”。新建 A3 竖版输出为 3508 × 4961 px，对应 A3 的 300 ppi 像素量；当前尚未写入打印 DPI 元数据。保存可编辑源文件沿用原有文件菜单。模型设置入口用于配置设计对话 API，独立生图接口仍在开发。
 
@@ -22,9 +24,11 @@ bun run generate:icons --target desktop
 bun run generate:tauri-menu
 bunx vite build
 Set-Location desktop
-node ../node_modules/@tauri-apps/cli/tauri.js build --config tauri.board-studio.conf.json --bundles nsis
+node ../node_modules/@tauri-apps/cli/tauri.js build --config tauri.board-studio.conf.json --no-bundle
+Set-Location ..
+bun tools/release/release-packages/src/board-studio/portable.ts
 ```
 
-安装包输出到仓库根目录下 `target/release/bundle/nsis/`。首次构建会从源码编译 HTML 引擎的 WebAssembly 模块。
+免安装程序输出到仓库根目录下 `target/release/Board-Studio-Portable/`，交付时更新本地免安装文件夹。首次构建会从源码编译 HTML 引擎的 WebAssembly 模块。
 
 仓库：https://github.com/7YYYB/open-pencil
