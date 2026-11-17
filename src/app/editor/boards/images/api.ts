@@ -19,6 +19,7 @@ export interface BoardImageRequest {
   prompt: string
   size: BoardImageSize
   reference?: Uint8Array
+  additionalReferences?: Uint8Array[]
   transparent?: boolean
 }
 
@@ -63,7 +64,14 @@ function imageRequestBody(config: BoardImageAPIConfig, request: BoardImageReques
       form.set('output_format', 'png')
       form.set('quality', 'high')
     }
-    form.set('image', new Blob([request.reference.slice()], { type: mime }), 'reference.png')
+    const references = [request.reference, ...(request.additionalReferences ?? [])]
+    references.forEach((bytes, index) => {
+      form.append(
+        references.length > 1 ? 'image[]' : 'image',
+        new Blob([bytes.slice()], { type: imageHeader(bytes)?.type ?? mime }),
+        `reference-${index}.png`
+      )
+    })
     return form
   }
   const body = { model: config.model, prompt: request.prompt, size: request.size, n: 1 }

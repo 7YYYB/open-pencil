@@ -10,6 +10,7 @@ import { renderForModel } from '@/app/ai/tools/vision/render'
 import type { EditorStore } from '@/app/editor/active-store'
 import { referenceAttachmentBytes } from '@/app/editor/boards/images/attachment'
 import { generateBoardImage } from '@/app/editor/boards/images/generate'
+import { captureSource } from '@/app/editor/boards/layers/source'
 
 const TOOL_NAME = 'generate_board_image'
 const positionSchema = v.pipe(v.number(), v.finite(), v.minValue(-1_000_000), v.maxValue(1_000_000))
@@ -17,9 +18,9 @@ const lengthSchema = v.pipe(v.number(), v.finite(), v.minValue(1), v.maxValue(20
 
 const inputSchema = v.strictObject({
   purpose: v.pipe(
-    v.picklist(['illustration', 'title-lettering']),
+    v.picklist(['illustration', 'title-lettering', 'board-preview']),
     v.description(
-      'Use illustration for characters, packaging, and imagery. Use title-lettering only for the short headline whose lettering should be a transparent PNG; all other Chinese text stays editable text.'
+      'Use board-preview to generate a complete finished board image with its typography first; let the user choose it before split_board_image converts it to layers. Use illustration for assets and title-lettering for a transparent decorative headline.'
     )
   ),
   prompt: v.pipe(
@@ -27,7 +28,7 @@ const inputSchema = v.strictObject({
     v.minLength(1),
     v.maxLength(16_000),
     v.description(
-      'Describe one artwork asset. For title-lettering, include the exact short Chinese headline verbatim and request accurate readable strokes on transparent background.'
+      'Describe the complete composition for board-preview, or one asset for illustration. For title-lettering, include the exact short Chinese headline and request readable strokes on transparent background.'
     )
   ),
   name: v.pipe(
@@ -36,6 +37,15 @@ const inputSchema = v.strictObject({
     v.description('Layer name, such as 主角正面 or 包装效果图')
   ),
   parent_id: v.optional(v.string()),
+  replace_node_id: v.optional(
+    v.pipe(
+      v.string(),
+      v.description(
+        'Replace this existing image layer in place, keeping position, size and siblings. Use the same ID as reference_node_id.'
+      )
+    )
+  ),
+  transparent: v.optional(v.boolean(), false),
   reference_node_id: v.optional(
     v.pipe(
       v.string(),
@@ -64,7 +74,7 @@ const inputSchema = v.strictObject({
 export const generateBoardImageTool = defineTool({
   name: TOOL_NAME,
   description:
-    'Generate one character, illustration, packaging mockup, or a short headline lettering asset using the configured image API. Image assets and title lettering are separate image layers; only title-lettering uses a transparent PNG. Keep every other Chinese heading and body copy as editable text. Use reference_attachment for a picture in the newest user message, or reference_node_id for an existing canvas asset, never both. Requires an image model configured in 展板工作台; API requests can incur provider charges.',
+    'Generate a complete competition board preview (purpose board-preview), illustration, or transparent headline. Models are discovered from the existing API automatically. After the user chooses a preview, use split_board_image to reconstruct its elements and real text layers. For individual edits use reference_node_id plus replace_node_id to replace the selected image in place; set transparent true for cutout layers. Use reference_attachment for user references instead of reference_node_id. API calls incur provider charges.',
   execution: { kind: 'async', mutation: 'document' },
   capabilities: ['document:write', 'network:access'],
   exposure: { mcp: false, webmcp: false },
@@ -81,6 +91,17 @@ interface BoardImageToolOptions {
   isLive?: () => boolean
 }
 
+function imageInput(args: Record<string, unknown>) {
+  const input = parseToolArgs(TOOL_NAME, inputSchema, args)
+  if (input.replace_node_id && input.replace_node_id !== input.reference_node_id) {
+    throw new Error('重生成时 replace_node_id 必须与 reference_node_id 相同。')
+  }
+  if (input.reference_node_id && input.reference_attachment !== undefined) {
+    throw new Error('reference_node_id 与 reference_attachment 只能指定一个。')
+  }
+  return input
+}
+
 export async function prepareBoardImageTool(
   store: EditorStore,
   figma: FigmaAPI,
@@ -93,10 +114,10 @@ export async function prepareBoardImageTool(
       throw new DOMException('设计任务已停止，未插入生成素材。', 'AbortError')
   }
   checkLive()
-  const input = parseToolArgs(TOOL_NAME, inputSchema, args)
-  if (input.reference_node_id && input.reference_attachment !== undefined) {
-    throw new Error('reference_node_id 与 reference_attachment 只能指定一个。')
-  }
+  const input = imageInput(args)
+  const replacement = input.replace_node_id
+    ? await captureSource(store, input.replace_node_id)
+    : undefined
   const graph = graphOf(figma)
   const parentId = input.parent_id ?? figma.currentPageId
   const parent = graph.getNode(parentId)
@@ -118,7 +139,7 @@ export async function prepareBoardImageTool(
     reference = rendered.png
   }
   checkLive()
-  const transparent = input.purpose === 'title-lettering'
+  const transparent = input.purpose === 'title-lettering' || input.transparent
   const bytes = await generateBoardImage(
     { prompt: input.prompt, size: input.image_size, reference, transparent },
     signal
@@ -138,6 +159,15 @@ export async function prepareBoardImageTool(
       if (!destination || destination.locked)
         throw new Error('目标分组已被删除或锁定，未插入生成素材。')
       const image = target.createImage(bytes)
+      if (replacement) {
+        replacement.check()
+        graph.updateNode(replacement.node.id, {
+          fills: replacement.node.fills.map((fill) =>
+            fill.type === 'IMAGE' ? { ...fill, imageHash: image.hash } : fill
+          )
+        })
+        return { id: replacement.node.id, name: replacement.node.name, replaced: true }
+      }
       const node = target.createRectangle()
       destination.appendChild(node)
       node.name = input.name

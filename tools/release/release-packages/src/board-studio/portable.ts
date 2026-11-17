@@ -11,6 +11,7 @@ const files = [
   ['target/release/BoardStudio.exe', 'BoardStudio.exe'],
   ['desktop/board-studio-portable.txt', '使用说明.txt'],
   ['LICENSE', 'licenses/LICENSE-OpenPencil.txt'],
+  ['desktop/board-studio-canvas-license.txt', 'licenses/LICENSE-Codex-Canvas.txt'],
   ['dist/THIRD-PARTY-NOTICES.md', 'licenses/THIRD-PARTY-NOTICES-JAVASCRIPT.md'],
   ['desktop/generated/THIRD-PARTY-NOTICES.md', 'licenses/THIRD-PARTY-NOTICES-RUST.md']
 ] as const

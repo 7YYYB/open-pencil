@@ -1,13 +1,14 @@
 import { useLocalStorage } from '@vueuse/core'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 import { aiModelSettings, designModelConnection, modelConnection } from '@/app/ai/models/store'
 import type { AIModelConnection } from '@/app/ai/models/types'
 
 /** Image model names are API-specific and are deliberately independent of the chat model. */
-export const boardImageModel = useLocalStorage('board-studio:image-model', '', {
+const legacyImageModel = useLocalStorage('board-studio:image-model', '', {
   writeDefaults: false
 })
+const connectionModels = useLocalStorage<Record<string, string>>('board-studio:image-models', {})
 /** Empty follows the current Design connection, without copying its saved credential. */
 export const boardImageConnectionId = useLocalStorage('board-studio:image-connection', '', {
   writeDefaults: false
@@ -32,6 +33,26 @@ export const boardImageConnection = computed(() =>
     : designModelConnection.value
 )
 
+watch(
+  () => boardImageConnection.value?.id,
+  (id) => {
+    if (!id || !legacyImageModel.value.trim()) return
+    if (!(id in connectionModels.value))
+      connectionModels.value = { ...connectionModels.value, [id]: legacyImageModel.value }
+    legacyImageModel.value = ''
+  },
+  { immediate: true }
+)
+
+export const boardImageModel = computed({
+  get: () => connectionModels.value[boardImageConnection.value?.id ?? ''] ?? '',
+  set: (model: string) => {
+    const id = boardImageConnection.value?.id
+    if (id) connectionModels.value = { ...connectionModels.value, [id]: model }
+    legacyImageModel.value = ''
+  }
+})
+
 export const boardImageSetup = computed(() => {
   const connection = boardImageConnection.value
   const label = boardImageConnections.value.find((item) => item.id === connection?.id)?.label ?? ''
@@ -39,7 +60,7 @@ export const boardImageSetup = computed(() => {
     return { available: false, label, reason: '请选择支持 OpenAI 图像接口的 API 连接。' }
   }
   if (!boardImageModel.value.trim()) {
-    return { available: false, label, reason: '填写服务商提供的图像模型 ID 后可生成素材。' }
+    return { available: false, label, reason: '正在等待自动读取生图模型；也可点击“读取模型”。' }
   }
   return { available: true, label, reason: '使用已保存的 API 密钥；接口须支持图像生成或编辑。' }
 })

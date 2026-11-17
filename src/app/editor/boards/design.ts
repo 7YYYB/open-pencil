@@ -26,7 +26,7 @@ const instructions: Record<BoardDesignStep, string> = {
   lettering:
     '只为主标题设计一张透明背景的 PNG 花字图层；如果 generate_board_image 提供透明文字目的参数，真实调用并指定透明背景与 PNG 输出，不得烘焙到整板背景。保留字体形态、色彩与构图作为独立图层。标题以外的中文副标题、正文、标签和编号必须继续使用真实文字层，字体调用本地已安装字体，按标题、正文、注释设置不同字重与字号。若当前 API 不能输出带 Alpha 的透明 PNG，告知我并提供可编辑文字标题备选，不要输出假透明棋盘格。',
   board:
-    '按参考图的构图关系和视觉密度制作完整的比赛展板初稿。先读取画板和已有素材，有需要时用 generate_board_image 生成主视觉、独立透明背景标题花字 PNG 和应用素材。标题花字是单独透明 PNG 图层；副标题、正文、编号、色值、所有一般排版文字必须是字体来自本地且具不同字重的真实文字图层。主视觉与标题应有鲜明的大小对比，支持模块错落安排，素材、底色、装饰和文字分层。不要把一整张底图叫作可编辑展板，不要用占位框或等分卡片网格当作完成稿。'
+    '先用 generate_board_image 的 board-preview 生成完整比赛展板效果图，包含主视觉、标题、文字和应用展示。让我选择满意的整张效果图后，再用 split_board_image 拆分为独立元素和真实文字层。不要用占位框或等分卡片网格代替完成的效果图，不要将尚未拆分的图片称为可编辑展板。'
 }
 
 /** Sends an explicit workbench action through the existing chat and attachment pipeline. */

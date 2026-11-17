@@ -10,10 +10,13 @@ import {
   requestBoardImageAPI,
   type BoardImageRequest
 } from './api'
+import { ensureImageModel } from './discovery'
 import { boardImageConnection, boardImageModel, boardImageSetup } from './settings'
 import { requireTransparentPixels } from './transparency'
 
 export async function generateBoardImage(request: BoardImageRequest, signal?: AbortSignal) {
+  await ensureImageModel()
+  signal?.throwIfAborted()
   if (!boardImageSetup.value.available) throw new Error(boardImageSetup.value.reason)
   const connection = boardImageConnection.value
   if (!connection) throw new Error('图像 API 连接已移除。')

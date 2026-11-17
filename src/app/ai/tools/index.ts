@@ -23,6 +23,7 @@ import type { EditorStore } from '@/app/editor/active-store'
 import { useLibraryService } from '@/app/libraries'
 
 import { generateBoardImageTool, prepareBoardImageTool } from './board-image'
+import { prepareBoardSplitTool, splitBoardImageTool } from './board-split'
 import { aiToolDefinitions } from './catalog'
 import { runEditorTool } from './runner'
 
@@ -76,7 +77,9 @@ export function createAITools(
                 messages,
                 isLive: () => run.active
               })
-            : def
+            : def === splitBoardImageTool
+              ? await prepareBoardSplitTool(store, args, abortSignal, () => run.active)
+              : def
         return withUndoNote(
           // The call belongs to the reply that made it, even if a later one starts meanwhile.
           await runEditorTool({
