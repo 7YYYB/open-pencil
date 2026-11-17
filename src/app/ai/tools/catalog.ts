@@ -2,6 +2,8 @@ import { ALL_TOOLS, CORE_TOOLS, isToolExposed, toolChangesDocument } from '@open
 
 import type { ToolAccessEntry } from '@/app/automation/tool-access/types'
 
+import { generateBoardImageTool } from './board-image'
+
 /** Preserve the compact shipped tool set as defaults, not as an availability restriction. */
 const defaultNames = new Set([
   ...CORE_TOOLS.map((tool) => tool.name),
@@ -27,10 +29,13 @@ const defaultNames = new Set([
   // Lets the model look at what it built.
   'export_image',
   'list_pages',
-  'create_page'
+  'create_page',
+  'generate_board_image'
 ])
 
-export const aiToolDefinitions = ALL_TOOLS.filter((tool) => isToolExposed(tool, 'ai'))
+export const aiToolDefinitions = [...ALL_TOOLS, generateBoardImageTool].filter((tool) =>
+  isToolExposed(tool, 'ai')
+)
 
 export const configurableAITools: ToolAccessEntry[] = aiToolDefinitions.map((tool) => ({
   name: tool.name,
