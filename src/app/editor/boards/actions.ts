@@ -1,7 +1,11 @@
 import type { SceneNode } from '@open-pencil/scene-graph'
 
+import { saveExportedFile } from '@/app/document/export/files'
+import { downloadBlob } from '@/app/document/io/browser'
 import type { EditorStore } from '@/app/editor/active-store'
 import { ensureGraphFonts } from '@/app/editor/fonts'
+
+import { renderBoardImage } from './export/image'
 
 export const A3 = { width: 3508, height: 4961 } as const
 
@@ -15,7 +19,8 @@ export function createBoard(store: EditorStore, landscape = false) {
   store.recordEdit({ label: '新建 A3 展板', restoresSelection: true }, () => {
     const board = store.graph.createNode('FRAME', pageId, {
       name: `A3 ${landscape ? '横版' : '竖版'} · 300 ppi`,
-      x, y: 0,
+      x,
+      y: 0,
       width: landscape ? A3.height : A3.width,
       height: landscape ? A3.width : A3.height,
       fills: [{ type: 'SOLID', color: { r: 1, g: 1, b: 1, a: 1 }, opacity: 1, visible: true }]
@@ -54,7 +59,10 @@ export async function replaceBoardFonts(store: EditorStore, family: string) {
       if (!node) continue
       store.graph.updateNode(id, {
         fontFamily: family,
-        styleRuns: node.styleRuns.map(run => ({ ...run, style: { ...run.style, fontFamily: family } }))
+        styleRuns: node.styleRuns.map((run) => ({
+          ...run,
+          style: { ...run.style, fontFamily: family }
+        }))
       })
     }
   })
@@ -68,5 +76,13 @@ export async function exportBoard(store: EditorStore, format: 'png' | 'jpg') {
   const board = selectedBoard(store)
   if (!board) throw new Error('请先选中一张展板或展板内的元素。')
   await ensureGraphFonts(store.graph, [board.id], store.renderer)
-  await store.exportTarget({ scope: 'selection', nodeIds: [board.id] }, format, { scale: 1 })
+  const bytes = await renderBoardImage(store, board.id, format)
+  await saveExportedFile(
+    bytes,
+    `${board.name}.${format}`,
+    format.toUpperCase(),
+    `.${format}`,
+    format === 'png' ? 'image/png' : 'image/jpeg',
+    downloadBlob
+  )
 }
