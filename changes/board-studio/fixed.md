@@ -1,0 +1,1 @@
+- Use Simplified Chinese in the Windows menu bar when the interface language is set to Simplified Chinese.
