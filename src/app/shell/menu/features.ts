@@ -1,5 +1,8 @@
+import { useStore } from '@nanostores/vue'
 import { invoke } from '@tauri-apps/api/core'
 import { computed, watch } from 'vue'
+
+import { locale } from '@open-pencil/vue/i18n'
 
 import { isCloudBinding } from '@/app/cloud/integration'
 import { DONATION_URL } from '@/app/donation'
@@ -30,13 +33,14 @@ const availableFeatures = computed(() =>
   (Object.keys(available) as AppMenuFeature[]).filter((feature) => available[feature]())
 )
 
-/** Keeps the desktop menu's feature items in step: it builds them only once told they're on. */
+/** Rebuilds the desktop menu when its visible features or the interface language change. */
 export function watchNativeMenuFeatures(): () => void {
+  const menuLocale = useStore(locale)
   return watch(
-    availableFeatures,
-    (features) => {
+    [availableFeatures, menuLocale],
+    ([features, locale]) => {
       if (!isTauri()) return
-      invoke('set_native_menu_features', { features }).catch((error: unknown) => {
+      invoke('set_native_menu_features', { features, locale }).catch((error: unknown) => {
         console.warn('[Menu] Failed to update the native menu', error)
       })
     },
