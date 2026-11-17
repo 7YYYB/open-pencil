@@ -1,0 +1,13 @@
+Board Studio · 展板工作台（免安装版）
+
+双击 BoardStudio.exe 启动，不需要运行安装程序或启动网页服务。
+新建文件后，在右侧“展板工作台”创建 A3 横版或竖版画板。
+选中文字、分组或整板，可以批量换字体；支持 PNG/JPG 导出。
+
+更新时关闭程序，再用新版程序文件替换本文件夹中的对应文件。
+作品请通过文件菜单保存到你自己的作品目录。
+应用设置和缓存仍保存在 Windows 用户数据目录中，不随此文件夹移动。
+使用系统已有的 Microsoft Edge WebView2 运行时。
+
+本版为基础编辑版，独立生图/改图 API 尚未接入。
+源码：https://github.com/7YYYB/open-pencil/tree/feat/board-studio
