@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Board Studio",
+  "mainBinaryName": "BoardStudio",
+  "identifier": "io.github.7yyyb.board-studio",
+  "build": {
+    "beforeBuildCommand": null
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Board Studio · 展板工作台",
+        "width": 1440,
+        "height": 900,
+        "dragDropEnabled": false,
+        "create": false
+      }
+    ]
+  },
+  "bundle": {
+    "targets": ["nsis"],
+    "createUpdaterArtifacts": false,
+    "publisher": "7YYYB",
+    "shortDescription": "A3 competition board design workbench based on OpenPencil",
+    "fileAssociations": [],
+    "resources": {
+      "../LICENSE": "licenses/LICENSE-OpenPencil.txt",
+      "../dist/THIRD-PARTY-NOTICES.md": "licenses/THIRD-PARTY-NOTICES-JAVASCRIPT.md",
+      "generated/THIRD-PARTY-NOTICES.md": "licenses/THIRD-PARTY-NOTICES-RUST.md"
+    },
+    "windows": {
+      "nsis": {
+        "languages": ["SimpChinese", "English"],
+        "displayLanguageSelector": true,
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": [] }
+    }
+  }
+}
