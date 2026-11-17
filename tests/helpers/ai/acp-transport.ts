@@ -6,6 +6,7 @@ import {
   RequestError,
   type ClientCapabilities,
   type NewSessionRequest,
+  type PromptRequest,
   type ResumeSessionRequest,
   type SessionConfigOption,
   type SessionUpdate
@@ -62,6 +63,8 @@ export interface FakeAgentOptions {
   startupOptions?: SessionConfigOption[]
   /** True to keep option changes waiting until `answerChoices`, as a slow agent does. */
   choicesWait?: boolean
+  /** Whether the agent accepts image blocks in its prompts. */
+  imageInput?: boolean
 }
 
 /** In-memory ACP agents, one per start, that record what the transport asks of them. */
@@ -76,7 +79,8 @@ export function fakeAgents({
   updates = [],
   configOptions,
   startupOptions,
-  choicesWait = false
+  choicesWait = false,
+  imageInput = false
 }: FakeAgentOptions = {}) {
   const choices = createDeferred<undefined>()
   let notifyLatest: ((update: SessionUpdate) => Promise<void>) | null = null
@@ -84,6 +88,7 @@ export function fakeAgents({
   const lookup = createDeferred<undefined>()
   let offered = configOptions
   const prompts: string[] = []
+  const promptRequests: PromptRequest[] = []
   /** Model changes and prompts in the order the agent got them. */
   const calls: string[] = []
   const created: NewSessionRequest[] = []
@@ -108,7 +113,10 @@ export function fakeAgents({
         capabilities.push(params.clientCapabilities)
         return {
           protocolVersion: PROTOCOL_VERSION,
-          agentCapabilities: { sessionCapabilities: { resume: {} } }
+          agentCapabilities: {
+            sessionCapabilities: { resume: {} },
+            promptCapabilities: { image: imageInput }
+          }
         }
       })
       .onRequest(methods.agent.session.new, ({ params, client }) => {
@@ -142,9 +150,11 @@ export function fakeAgents({
         return { configOptions: offered ?? [] }
       })
       .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
-        const [part] = params.prompt
         calls.push('prompt')
-        prompts.push(part?.type === 'text' ? part.text : '')
+        promptRequests.push(params)
+        prompts.push(
+          params.prompt.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('\n')
+        )
         const { sessionId } = params
         const report = (update: SessionUpdate, session = sessionId) =>
           client.notify(methods.client.session.update, { sessionId: session, update })
@@ -213,6 +223,7 @@ export function fakeAgents({
   return {
     startup,
     prompts,
+    promptRequests,
     calls,
     created,
     resumed,
@@ -234,10 +245,10 @@ export function message(role: UIMessage['role'], text: string): UIMessage {
   return { id: crypto.randomUUID(), role, parts: [{ type: 'text', text }] }
 }
 
-/** Sends `text` after `history` and waits for the reply to end. */
+/** Sends a message after `history` and waits for the reply to end. */
 export async function send(
   transport: ACPChatTransport,
-  text: string,
+  text: string | UIMessage,
   history: UIMessage[] = [],
   abortSignal?: AbortSignal
 ): Promise<UIMessageChunk[]> {
@@ -245,7 +256,7 @@ export async function send(
     trigger: 'submit-message',
     chatId: 'chat',
     messageId: undefined,
-    messages: [...history, message('user', text)],
+    messages: [...history, typeof text === 'string' ? message('user', text) : text],
     abortSignal
   })
   const chunks: UIMessageChunk[] = []
