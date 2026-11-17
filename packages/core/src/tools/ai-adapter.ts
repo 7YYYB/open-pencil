@@ -4,7 +4,13 @@
  * Consumes native tool input schemas and wraps execution with FigmaAPI instantiation.
  */
 
-import type { JSONValue, ToolResultPart, ToolSet, tool as createTool } from 'ai'
+import type {
+  JSONValue,
+  ToolExecutionOptions,
+  ToolResultPart,
+  ToolSet,
+  tool as createTool
+} from 'ai'
 import { isEmptyObject } from 'es-toolkit'
 
 import { appendAll } from '@open-pencil/scene-graph/arrays'
@@ -56,7 +62,8 @@ export interface AIAdapterOptions {
     def: ToolDef,
     figma: FigmaAPI,
     args: Record<string, unknown>,
-    call: { toolCallId: string }
+    call: Pick<ToolExecutionOptions<unknown>, 'toolCallId' | 'abortSignal'> &
+      Partial<Pick<ToolExecutionOptions<unknown>, 'messages'>>
   ) => Promise<unknown>
   onAfterExecute?: (def: ToolDef) => Promise<void> | void
   onFlashNodes?: (nodeIds: string[]) => void
@@ -207,7 +214,15 @@ export function toolsToAI(
     const toolOpts: Record<string, unknown> = {
       description: def.description,
       inputSchema: toolStandardJSONSchema(toolInputFor(def, 'ai')),
-      execute: async (args: Record<string, unknown>, { toolCallId }: { toolCallId: string }) => {
+      execute: async (
+        args: Record<string, unknown>,
+        {
+          toolCallId,
+          abortSignal,
+          messages
+        }: Pick<ToolExecutionOptions<unknown>, 'toolCallId' | 'abortSignal'> &
+          Partial<Pick<ToolExecutionOptions<unknown>, 'messages'>>
+      ) => {
         const startTime = Date.now()
         const figma = options.getFigma()
         const nodeBefore =
@@ -216,7 +231,7 @@ export function toolsToAI(
         options.onBeforeExecute?.(def)
         try {
           let execResult = options.executeTool
-            ? await options.executeTool(def, figma, args, { toolCallId })
+            ? await options.executeTool(def, figma, args, { toolCallId, abortSignal, messages })
             : await def.loadFonts(figma, args).then(() => def.execute(figma, args))
           if (def.mutates && options.onFlashNodes) {
             const ids = extractNodeIds(execResult)
