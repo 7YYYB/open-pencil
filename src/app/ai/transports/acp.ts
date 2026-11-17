@@ -18,6 +18,7 @@ import {
   type AgentLaunch
 } from '@/app/ai/agents/acp/connection'
 import { createUpdateMapper } from '@/app/ai/agents/acp/events'
+import { AgentImageInputError } from '@/app/ai/agents/acp/oneoff'
 import {
   sessionChoice,
   sessionOptionRequests,
@@ -47,6 +48,8 @@ import { subagentAgent } from '@/app/automation/agents'
 import { getAutomationAuthToken } from '@/app/automation/mcp/spawn'
 import { describeDiagnosticError, recordACPTransportFailure } from '@/app/diagnostics'
 import type { EditorStore } from '@/app/editor/active-store'
+
+import { attachedImages } from './acp-images'
 
 /** What starting an agent reaches outside the transport, which tests replace. */
 export interface ACPStartup extends AgentLaunch {
@@ -88,6 +91,8 @@ interface ACPSession {
   effort: SessionChoice | null
   /** Whether the agent continued a saved session, which already holds the instructions. */
   resumed: boolean
+  /** Whether this agent accepts image blocks in a prompt. */
+  imageInput: boolean
 }
 
 /** One agent turn's tokens, as an ACP agent reports them with its answer to the prompt. */
@@ -239,6 +244,7 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
     ReadableStream<UIMessageChunk>
   > {
     const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user')
+    const images = attachedImages(lastUserMessage)
     const text =
       lastUserMessage?.parts
         .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
@@ -261,6 +267,10 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
       this.sentContext = started.resumed
     } else {
       await this.applyEffort(this.session, abortSignal)
+    }
+
+    if (images.length > 0 && !this.session.imageInput) {
+      throw new AgentImageInputError(this.agentDef)
     }
 
     const carriesContext = !this.sentContext
@@ -330,7 +340,7 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
         connection.agent
           .request(methods.agent.session.prompt, {
             sessionId,
-            prompt: [{ type: 'text', text: promptText }]
+            prompt: [...images, { type: 'text', text: promptText }]
           })
           // The prompt answers once the agent's turn is over; nothing else ends the reply.
           .then((result) => {
@@ -563,6 +573,7 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
       model: opened.model,
       effort: null,
       resumed: opened.resumed,
+      imageInput: initialized.agentCapabilities?.promptCapabilities?.image === true,
       get onUpdate() {
         return onUpdate
       },
