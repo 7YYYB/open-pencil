@@ -35,7 +35,12 @@ import {
 import { useChatReview } from '@/app/ai/review/use'
 import { didHitStepLimit } from '@/app/ai/tools'
 import { cloudBillingURL } from '@/app/cloud/integration'
-import { getActiveEditorStore, getActiveEditorStoreOrNull } from '@/app/editor/active-store'
+import {
+  getActiveEditorStore,
+  getActiveEditorStoreOrNull,
+  useEditorStore
+} from '@/app/editor/active-store'
+import { onBoardDesignRequested } from '@/app/editor/boards/design'
 import { useDateFormat } from '@/app/i18n/date'
 import { openSettingsDialog } from '@/app/settings/dialog'
 import { openExternalLink, toast } from '@/app/shell/ui'
@@ -71,6 +76,7 @@ const {
 const { ai } = useI18n()
 const dates = useDateFormat()
 const runLocation = useChatRunLocation()
+const panelEditor = useEditorStore()
 
 const chat = shallowRef<Chat<UIMessage> | null>(null)
 const compaction = useChatCompaction({ chat, ensureChat, flush: history.flush, compactAgent })
@@ -91,6 +97,8 @@ const submission = useChatSubmission({
     openSettings: ai.value.openProviderSettingsAction,
     requestFailed: ai.value.chatRequestFailed,
     visionUnavailable: ai.value.visionModelUnavailable,
+    imageAnalysisTimeout: '读取参考图超时，请重试；也可以改用支持图片输入的设计模型直接设计。',
+    imageAnalysisEmpty: '视觉接口没有返回图片分析结果，请检查模型是否支持图片输入。',
     cloudUnavailable: ai.value.chatCloudUnavailable,
     runSetup: ai.value.aiSetupRun,
     agentSetup: {
@@ -376,6 +384,12 @@ function sendOrQueue(message: ChatSubmission, afterWork: boolean) {
   }
   void submitMessage(message)
 }
+onBoardDesignRequested(({ editor, submission: message, accept }) => {
+  if (editor !== panelEditor || !isConfigured.value || inputLocked.value || history.readOnly.value)
+    return
+  accept()
+  sendOrQueue(message, true)
+})
 // Once a reply ends, what waited goes next, one message per reply; a failed reply keeps them.
 function sendNextQueued() {
   const next = takeNextMessage()
@@ -579,6 +593,14 @@ function handleStop() {
         :page="runLocation.page"
         @open="runLocation.open"
       />
+      <div
+        v-if="submission.busy.value"
+        role="status"
+        class="flex items-center justify-between gap-2 px-3 py-2 text-xs text-muted"
+      >
+        <span>正在准备参考图；支持视觉的设计模型将直接收到图片。</span>
+        <AppButton size="xs" variant="outline" @click="handleStop">取消</AppButton>
+      </div>
       <AppAlert
         v-if="chatFailure?.reason === 'agent-not-installed'"
         class="mx-3 mb-2"
