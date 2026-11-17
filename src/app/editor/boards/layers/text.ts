@@ -32,7 +32,26 @@ export async function recognizeBoardText(
     .replace(/\s*```$/, '')
   const result = v.safeParse(v.pipe(v.string(), v.parseJson(), boardTextSchema), json)
   if (!result.success) throw new Error('文字识别未返回有效的文字坐标，原图未改动。请重试拆分。')
-  return result.output.blocks.filter(
-    (block) => block.text.trim() && block.x + block.width <= 1001 && block.y + block.height <= 1001
-  )
+  return result.output.blocks
+    .filter((block) => block.text.trim())
+    .map((block) => {
+      // Keep recognized copy even when a model slightly overshoots the image boundary.
+      const x = Math.min(block.x, 999)
+      const y = Math.min(block.y, 999)
+      const width = Math.min(block.width, 1000 - x)
+      const height = Math.min(block.height, 1000 - y)
+      return {
+        ...block,
+        x,
+        y,
+        width,
+        height,
+        uncertain:
+          block.uncertain ||
+          x !== block.x ||
+          y !== block.y ||
+          width !== block.width ||
+          height !== block.height
+      }
+    })
 }
