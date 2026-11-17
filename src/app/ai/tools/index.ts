@@ -22,6 +22,7 @@ import { recordToolCompleted, type AIDiagnosticContext } from '@/app/diagnostics
 import type { EditorStore } from '@/app/editor/active-store'
 import { useLibraryService } from '@/app/libraries'
 
+import { generateBoardImageTool, prepareBoardImageTool } from './board-image'
 import { aiToolDefinitions } from './catalog'
 import { runEditorTool } from './runner'
 
@@ -66,18 +67,29 @@ export function createAITools(
         }
         return figma
       },
-      executeTool: async (def, figma, args, { toolCallId }) =>
-        withUndoNote(
+      executeTool: async (def, figma, args, { toolCallId, abortSignal, messages }) => {
+        const run = currentRun(store)
+        const readyDef =
+          def === generateBoardImageTool
+            ? await prepareBoardImageTool(store, figma, args, {
+                signal: abortSignal,
+                messages,
+                isLive: () => run.active
+              })
+            : def
+        return withUndoNote(
           // The call belongs to the reply that made it, even if a later one starts meanwhile.
           await runEditorTool({
             store,
             figma,
-            def,
+            def: readyDef,
             args,
-            reply: { run: currentRun(store), toolCallId }
+            signal: abortSignal,
+            reply: { run, toolCallId }
           }),
           takeRunUndoNote(store)
-        ),
+        )
+      },
       onAfterExecute: (def) => {
         if (def.mutates && !isAtomicTool(def)) store.requestRender()
       },
