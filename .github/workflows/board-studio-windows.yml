@@ -4,6 +4,11 @@ on:
   push:
     branches: [feat/board-studio]
   workflow_dispatch:
+    inputs:
+      release_installer:
+        description: Only enable when explicitly releasing a Windows installer.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -13,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  installer:
+  portable:
     runs-on: windows-latest
     timeout-minutes: 60
     env:
@@ -49,13 +54,27 @@ jobs:
         run: bun run generate:tauri-menu
       - name: Build the embedded editor
         run: bunx vite build
-      - name: Build the Windows installer
+      - name: Build the Windows app without an installer
         working-directory: desktop
-        run: node ../node_modules/@tauri-apps/cli/tauri.js build --config tauri.board-studio.conf.json --bundles nsis
-      - name: Upload the installer
+        run: node ../node_modules/@tauri-apps/cli/tauri.js build --config tauri.board-studio.conf.json --no-bundle
+      - name: Assemble the portable folder
+        run: bun tools/release/release-packages/src/board-studio/portable.ts
+      - name: Upload the portable app
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: Board-Studio-Windows-x64
+          name: Board-Studio-Portable-Windows-x64
+          path: target/release/Board-Studio-Portable/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Bundle an installer only for an explicit release
+        if: github.event_name == 'workflow_dispatch' && inputs.release_installer
+        working-directory: desktop
+        run: node ../node_modules/@tauri-apps/cli/tauri.js bundle --config tauri.board-studio.conf.json --bundles nsis
+      - name: Upload the requested installer
+        if: github.event_name == 'workflow_dispatch' && inputs.release_installer
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Board-Studio-Installer-Windows-x64
           path: target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
           retention-days: 30
