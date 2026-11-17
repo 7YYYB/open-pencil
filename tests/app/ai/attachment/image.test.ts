@@ -11,6 +11,8 @@ import type { AgentQuestion } from '@/app/ai/agents/acp/oneoff'
 import {
   analyzeAttachedImages,
   designMessageWithImageFindings,
+  EmptyImageAnalysisError,
+  ImageAnalysisTimeoutError,
   VisionModelUnavailableError,
   type ImageAnalysisDependencies
 } from '@/app/ai/attachment/image/analyze'
@@ -105,7 +107,7 @@ describe('image attachment analysis', () => {
       providerOptions?: unknown
       messages: Array<{ content: Array<{ type: string; data?: Uint8Array }> }>
     }
-    expect(request.providerOptions).toEqual({ openrouter: { reasoning: { effort: 'low' } } })
+    expect(request.providerOptions).toEqual({ openrouter: { reasoning: { effort: 'none' } } })
     expect(request.messages[0]?.content.map((part) => part.type)).toEqual([
       'text',
       'file',
@@ -114,6 +116,43 @@ describe('image attachment analysis', () => {
     ])
     expect(request.messages[0]?.content[1]?.data).toEqual(image.data)
     expect(request.messages[0]?.content[2]?.data).toEqual(secondImage.data)
+  })
+
+  test('rejects empty visual findings instead of sending a pretend analysis to Design', async () => {
+    const store = asDouble<EditorStore>({ state: { selectedIds: new Set() } })
+    await expect(
+      analyzeAttachedImages(store, 'Match this layout', [image], {
+        createRuntime: async () =>
+          asDouble<AIModelRuntime>({
+            kind: 'direct',
+            model: {},
+            role: {
+              profile: { maxOutputTokens: 8000 },
+              connection: { providerID: 'openrouter' }
+            }
+          }),
+        inspect: async () => ({ text: '  ' }) as never
+      })
+    ).rejects.toBeInstanceOf(EmptyImageAnalysisError)
+  })
+
+  test('bounds a stalled Vision preparation even when its dependency ignores cancellation', async () => {
+    const store = asDouble<EditorStore>({})
+    const runtime = Promise.withResolvers<AIModelRuntime | null>()
+    await expect(
+      analyzeAttachedImages(
+        store,
+        'Match this layout',
+        [image],
+        {
+          createRuntime: () => runtime.promise,
+          inspect: async () => {
+            throw new Error('No runtime was available')
+          }
+        },
+        { timeoutMs: 0 }
+      )
+    ).rejects.toBeInstanceOf(ImageAnalysisTimeoutError)
   })
 
   describe('when a coding agent holds Vision', () => {
