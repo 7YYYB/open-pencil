@@ -1,4 +1,5 @@
 pub mod events;
+mod zh_cn;
 
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -46,6 +47,7 @@ pub struct NativeMenuInputs {
     pub features: Vec<String>,
     pub disabled: HashSet<String>,
     pub checked: HashMap<String, bool>,
+    zh_cn: bool,
 }
 
 pub struct NativeMenuState(pub Mutex<NativeMenuInputs>);
@@ -54,6 +56,16 @@ pub struct NativeMenuState(pub Mutex<NativeMenuInputs>);
 struct MenuBuild<'a> {
     inputs: &'a NativeMenuInputs,
     checked: HashMap<String, bool>,
+}
+
+impl MenuBuild<'_> {
+    fn label<'a>(&self, key: &str, fallback: &'a str) -> &'a str {
+        if self.inputs.zh_cn {
+            zh_cn::label(key).unwrap_or(fallback)
+        } else {
+            fallback
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -164,7 +176,10 @@ fn build_submenu<R: tauri::Runtime>(
             continue;
         }
 
-        let label = entry.label.as_deref().unwrap_or_default();
+        let label = build.label(
+            entry.id.as_deref().unwrap_or_default(),
+            entry.label.as_deref().unwrap_or_default(),
+        );
         if entry.id.as_deref() == Some("open-recent") {
             let submenu = build_recent_files_submenu(app, label, &build.inputs.recent_files)?;
             builder = builder.item(&submenu);
@@ -295,7 +310,14 @@ fn build_schema_menus<R: tauri::Runtime>(
                 .as_ref()
                 .is_none_or(|feature| build.inputs.features.contains(feature))
         })
-        .map(|group| build_submenu(app, &group.label, &group.items, build))
+        .map(|group| {
+            build_submenu(
+                app,
+                build.label(&group.label, &group.label),
+                &group.items,
+                build,
+            )
+        })
         .collect()
 }
 
@@ -513,8 +535,12 @@ pub fn update_app_menu<R: tauri::Runtime>(
 pub fn set_native_menu_features<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     features: Vec<String>,
+    locale: Option<String>,
 ) -> Result<(), String> {
-    update_app_menu(&app, |inputs| inputs.features = features)
+    update_app_menu(&app, |inputs| {
+        inputs.features = features;
+        inputs.zh_cn = cfg!(target_os = "windows") && locale.as_deref() == Some("zh-CN");
+    })
 }
 
 /// Sets the enabled state of the items among `changed`, wherever they sit in the menu.
