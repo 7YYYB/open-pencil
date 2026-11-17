@@ -35,6 +35,7 @@ export async function rustNotices(root: string, artifact: NoticedArtifact): Prom
   const directory = await mkdtemp(join(tmpdir(), 'open-pencil-notices-'))
   try {
     const config = join(directory, 'about.toml')
+    const output = join(directory, 'notices.md')
     await writeFile(
       config,
       [
@@ -54,13 +55,15 @@ export async function rustNotices(root: string, artifact: NoticedArtifact): Prom
         '--manifest-path',
         join(root, artifact.manifest),
         '--locked',
+        '--output-file',
+        output,
         TEMPLATE
       ],
-      { cwd: dirname(join(root, artifact.manifest)), stdout: 'pipe', stderr: 'inherit' }
+      { cwd: dirname(join(root, artifact.manifest)), stdout: 'inherit', stderr: 'inherit' }
     )
-    const [notices, code] = await Promise.all([new Response(child.stdout).text(), child.exited])
+    const code = await child.exited
     if (code !== 0) throw new Error(`cargo about failed for ${artifact.name} with ${code}`)
-    return notices
+    return await readFile(output, 'utf8')
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
