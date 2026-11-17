@@ -5,6 +5,7 @@ import type { SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sd
 import { ACP_AGENTS } from '@open-pencil/core/constants'
 import { expectDefined } from '@open-pencil/test-support/assert'
 
+import { AgentImageInputError } from '@/app/ai/agents/acp/oneoff'
 import { SUBAGENT_PART, subagentTranscript } from '@/app/ai/chat/subagents'
 import { systemPrompt } from '@/app/ai/chat/system-prompt'
 import { restAgents, withSubagent } from '@/app/automation/agents'
@@ -33,6 +34,94 @@ test('a new session gets the instructions once and is reported once the agent an
   expect(sessions).toEqual(['session-1'])
   await chat.destroy()
 })
+
+test('reference image attachments reach the agent with the newest message text', async () => {
+  const agents = fakeAgents({ imageInput: true })
+  const { transport: chat } = transport(agents)
+  const attached = message('user', 'Use these references')
+  attached.parts.push(
+    { type: 'file', mediaType: 'image/png', url: 'data:image/png;base64,AID/' },
+    { type: 'file', mediaType: 'image/jpeg', url: 'data:image/jpeg;base64,/wCA' },
+    { type: 'file', mediaType: 'image/webp', url: 'data:image/webp;base64,gP8A' },
+    { type: 'text', text: 'Keep the title editable' }
+  )
+  try {
+    await send(chat, attached)
+    expect(agents.promptRequests[0]?.prompt).toMatchObject([
+      { type: 'image', mimeType: 'image/png', data: 'AID/' },
+      { type: 'image', mimeType: 'image/jpeg', data: '/wCA' },
+      { type: 'image', mimeType: 'image/webp', data: 'gP8A' },
+      {
+        type: 'text',
+        text: expect.stringContaining('Use these references\nKeep the title editable')
+      }
+    ])
+    await send(chat, 'Change the title', [attached, message('assistant', 'done')])
+    expect(agents.promptRequests[1]?.prompt).toEqual([{ type: 'text', text: 'Change the title' }])
+  } finally {
+    await chat.destroy()
+  }
+})
+
+test('an agent that cannot read images refuses the attachment and can still take text', async () => {
+  const agents = fakeAgents()
+  const { transport: chat, sessions } = transport(agents)
+  const attached = message('user', 'Use this reference')
+  attached.parts.push({ type: 'file', mediaType: 'image/png', url: 'data:image/png;base64,AID/' })
+  try {
+    await expect(send(chat, attached)).rejects.toBeInstanceOf(AgentImageInputError)
+    expect(agents.promptRequests).toEqual([])
+    expect(sessions).toEqual([])
+    await send(chat, 'Use a red title')
+    expect(agents.prompts[0]?.startsWith(systemPrompt())).toBe(true)
+    expect(agents.prompts[0]?.endsWith('Use a red title')).toBe(true)
+  } finally {
+    await chat.destroy()
+  }
+})
+
+test.each([
+  {
+    mediaType: 'application/pdf',
+    url: 'data:application/pdf;base64,AID/',
+    failure: 'Choose a PNG, JPEG, or WebP image'
+  },
+  {
+    mediaType: 'image/png',
+    url: 'data:image/png;base64,A',
+    failure: 'Could not read the attached image'
+  },
+  {
+    mediaType: 'image/png',
+    url: 'data:image/png;base64,',
+    failure: 'Could not read the attached image'
+  },
+  {
+    mediaType: 'image/png',
+    url: 'https://example.com/reference.png',
+    failure: 'Could not read the attached image'
+  },
+  {
+    mediaType: 'image/png',
+    url: 'data:image/jpeg;base64,AID/',
+    failure: 'The attached image format does not match its media type'
+  }
+])(
+  'an unreadable attachment is not silently dropped ($mediaType, $url)',
+  async ({ mediaType, url, failure }) => {
+    const agents = fakeAgents({ imageInput: true })
+    const { transport: chat } = transport(agents)
+    const attached = message('user', 'Use this reference')
+    attached.parts.push({ type: 'file', mediaType, url })
+    try {
+      await expect(send(chat, attached)).rejects.toThrow(failure)
+      expect(agents.spawns()).toBe(0)
+      expect(agents.promptRequests).toEqual([])
+    } finally {
+      await chat.destroy()
+    }
+  }
+)
 
 test('the agent starts in its workspace with the PATH its lookup searched', async () => {
   const agents = fakeAgents()
