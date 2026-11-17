@@ -1,13 +1,19 @@
 import type { Ref } from 'vue'
 
 import { AgentSetupError, type AgentSetupProblem } from '@/app/ai/agents/setup/readiness'
-import { VisionModelUnavailableError } from '@/app/ai/attachment/image/analyze'
+import {
+  EmptyImageAnalysisError,
+  ImageAnalysisTimeoutError,
+  VisionModelUnavailableError
+} from '@/app/ai/attachment/image/analyze'
 import { CloudAIUnavailableError } from '@/app/ai/models/runtime'
 
 export interface SubmissionMessages {
   openSettings: string
   requestFailed: string
   visionUnavailable: string
+  imageAnalysisTimeout?: string
+  imageAnalysisEmpty?: string
   cloudUnavailable: string
   runSetup: string
   agentSetup: Record<AgentSetupProblem, string>
@@ -39,6 +45,17 @@ export function reportSubmissionError(options: SubmissionErrorOptions, error: un
   }
   if (error instanceof VisionModelUnavailableError) {
     options.reportError(options.messages.value.visionUnavailable, {
+      label: options.messages.value.openSettings,
+      run: options.openModelSettings
+    })
+    return
+  }
+  if (error instanceof ImageAnalysisTimeoutError || error instanceof EmptyImageAnalysisError) {
+    const message =
+      error instanceof ImageAnalysisTimeoutError
+        ? options.messages.value.imageAnalysisTimeout
+        : options.messages.value.imageAnalysisEmpty
+    options.reportError(message ?? options.messages.value.requestFailed, {
       label: options.messages.value.openSettings,
       run: options.openModelSettings
     })
