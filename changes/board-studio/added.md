@@ -1,0 +1,1 @@
+- Add an A3 competition-board panel with portrait and landscape creation, recursive font replacement, and full-size image export.
