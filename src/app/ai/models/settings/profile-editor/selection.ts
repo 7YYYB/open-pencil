@@ -10,6 +10,7 @@ import {
 
 import type { AIModelProfileDraft, AIModelCapability } from '@/app/ai/models'
 import { resolveModelsDevModel } from '@/app/ai/models/catalog'
+import type { AccountModel } from '@/app/ai/models/catalog/connection'
 import { useProviderModelCatalog } from '@/app/ai/models/catalog/use'
 import { profileModelID } from '@/app/ai/models/language-model'
 import { modelPickerOptions, type ModelPickerLabels } from '@/app/ai/models/picker/options'
@@ -22,7 +23,8 @@ import { useCloudModelSelection } from './cloud'
 export function useProfileModelSelection(
   draft: AIModelProfileDraft,
   ai: Readonly<Ref<ModelPickerLabels & { customModel: string; agentDefaultModel: string }>>,
-  agents: AgentModelSource = HOST_AGENT_MODELS
+  agents: AgentModelSource = HOST_AGENT_MODELS,
+  accountModels?: Readonly<Ref<AccountModel[] | undefined>>
 ) {
   const CUSTOM_MODEL_VALUE = '__custom__'
   /** An agent profile that names no model, which leaves the choice to the agent. */
@@ -32,6 +34,7 @@ export function useProfileModelSelection(
     Boolean(draft.customModelID.trim()) || providerKind(draft.providerID) === 'harness'
   )
   const catalogModel = ref<ModelOption | null>(null)
+  const preferManual = ref(false)
 
   const providerDef = computed(
     () => AI_PROVIDERS.find((provider) => provider.id === draft.providerID) ?? AI_PROVIDERS[0]
@@ -91,6 +94,15 @@ export function useProfileModelSelection(
     pickerEntry(CUSTOM_MODEL_VALUE, ai.value.customModel, ai.value.customModelGroup)
   )
   const modelOptions = computed(() => {
+    const account = accountModels?.value
+    if (account) {
+      const group = '从 API 获取'
+      const choices = account.map(({ id }) => pickerEntry(id, id, group))
+      const saved = !customModelSelected.value ? draft.modelID : ''
+      if (saved && !choices.some(({ value }) => value === saved))
+        choices.unshift(pickerEntry(saved, saved, ai.value.allModels))
+      return supportsCustomModel.value ? [customModelOption.value, ...choices] : choices
+    }
     const options = modelPickerOptions(availableModels.value, providerDef.value.models, ai.value)
     if (isACP.value) {
       // The agent's own choice and a custom ID come first, ahead of a long list that the picker
@@ -112,7 +124,12 @@ export function useProfileModelSelection(
     return [...options.slice(0, insertAt), customModelOption.value, ...options.slice(insertAt)]
   })
   const selectedModelValue = computed(() => {
-    if (customModelSelected.value) return CUSTOM_MODEL_VALUE
+    if (customModelSelected.value) {
+      const id = draft.customModelID.trim()
+      return !preferManual.value && accountModels?.value?.some((model) => model.id === id)
+        ? id
+        : CUSTOM_MODEL_VALUE
+    }
     return isACP.value && !draft.modelID ? AGENT_DEFAULT_VALUE : draft.modelID
   })
   const knownModel = computed(() => {
@@ -192,6 +209,7 @@ export function useProfileModelSelection(
   }
 
   function updateProvider(providerID: AIProviderID): void {
+    preferManual.value = false
     catalogModel.value = null
     draft.providerID = providerID
     draft.sourceConnectionId = null
@@ -217,6 +235,7 @@ export function useProfileModelSelection(
 
   function updateModel(modelID: string): void {
     if (modelID === CUSTOM_MODEL_VALUE) {
+      preferManual.value = true
       customModelSelected.value = true
       draft.customModelID = ''
       draft.agentEffort = ''
@@ -224,6 +243,7 @@ export function useProfileModelSelection(
 
       return
     }
+    preferManual.value = false
     draft.modelID = modelID === AGENT_DEFAULT_VALUE ? '' : modelID
     // Each model offers its own efforts, so another model starts on the agent's.
     draft.agentEffort = ''
@@ -231,6 +251,8 @@ export function useProfileModelSelection(
     customModelSelected.value = false
     draft.customModelID = ''
     applyKnownModelMetadata()
+    const imageInput = accountModels?.value?.find(({ id }) => id === modelID)?.imageInput
+    if (imageInput !== undefined) visionEnabled.value = imageInput
     void refreshCatalogModel()
     if (!draft.name.trim()) draft.name = modelDisplayName.value
   }

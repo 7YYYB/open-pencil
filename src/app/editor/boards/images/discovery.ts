@@ -1,16 +1,22 @@
 import { computed, ref } from 'vue'
 
-import { IS_TAURI } from '@open-pencil/core/constants'
-
+import {
+  accountCatalogBaseURL,
+  cachedAccountModels,
+  fetchAccountModels,
+  isChatModelID,
+  MODEL_CATALOG_TIMEOUT_MS,
+  rememberAccountModels,
+  supportsAccountCatalog,
+  type AccountModel
+} from '@/app/ai/models/catalog/connection'
 import { profileModelID } from '@/app/ai/models/language-model'
 import { modelCredentialRevision, resolveModelConnectionAPIKey } from '@/app/ai/models/runtime'
 import { aiModelSettings } from '@/app/ai/models/store'
-import { tauriFetch } from '@/app/tauri/http'
 
-import { fetchImageModels, isChatModelID, type ImageModelOption } from './catalog'
 import { boardImageConnection, boardImageModel } from './settings'
 
-export const imageModelOptions = ref<ImageModelOption[]>([])
+export const imageModelOptions = ref<AccountModel[]>([])
 export const imageModelsLoading = ref(false)
 export const imageModelsMessage = ref('自动沿用现有 API 连接和密钥。')
 export const imageCandidates = computed(() =>
@@ -30,18 +36,35 @@ let discovery: AbortController | undefined
 let pending: Promise<void> | undefined
 let loadedConnection = ''
 
+function showModels(models: AccountModel[]) {
+  imageModelOptions.value = models
+  const count = imageCandidates.value.length
+  imageModelsMessage.value = count
+    ? `已从 API 读取 ${count} 个生图候选。`
+    : '服务商未返回可识别的生图模型。可在自定义模型 ID 中指定已开通的模型。'
+}
+
 export function discoverImageModels(force = false): Promise<void> {
   const connection = boardImageConnection.value
-  const identity = connection
-    ? `${connection.id}:${connection.customBaseURL}:${modelCredentialRevision.value}`
-    : 'none'
+  const revision = modelCredentialRevision.value
+  const identity = connection ? `${connection.id}:${connection.customBaseURL}:${revision}` : 'none'
+  const baseURL = connection
+    ? accountCatalogBaseURL(connection.providerID, connection.customBaseURL)
+    : ''
+  const cached = !force && connection && cachedAccountModels(connection.id, baseURL, revision)
+  if (cached && !pending) {
+    loadedConnection = identity
+    showModels(cached)
+    return Promise.resolve()
+  }
   if (!force && loadedConnection === identity) return pending ?? Promise.resolve()
   discovery?.abort()
   const controller = new AbortController()
   discovery = controller
   loadedConnection = identity
   imageModelOptions.value = []
-  if (!connection || !['openai', 'openai-compatible'].includes(connection.providerID)) {
+  pending = undefined
+  if (!connection || !supportsAccountCatalog(connection.providerID)) {
     imageModelsMessage.value = '请先在模型 API 中添加 OpenAI 兼容连接。'
     imageModelsLoading.value = false
     return Promise.resolve()
@@ -49,29 +72,21 @@ export function discoverImageModels(force = false): Promise<void> {
   imageModelsLoading.value = true
   imageModelsMessage.value = '正在从现有 API 读取模型列表…'
   pending = (async () => {
-    const timeout = setTimeout(() => controller.abort(), 20_000)
+    const timeout = setTimeout(() => controller.abort(), MODEL_CATALOG_TIMEOUT_MS)
     try {
       const key = await resolveModelConnectionAPIKey(connection.id)
       if (!key) throw new Error('现有连接尚未保存 API 密钥。请在模型 API 中保存。')
-      const baseURL =
-        connection.providerID === 'openai' ? 'https://api.openai.com/v1' : connection.customBaseURL
-      const fetcher = IS_TAURI
-        ? (input: RequestInfo | URL, init?: RequestInit) =>
-            tauriFetch(input, init, 4 * 1024 * 1024, 20_000)
-        : fetch
-      const models = await fetchImageModels(baseURL, key, fetcher, controller.signal)
+      const models = await fetchAccountModels(baseURL, key, controller.signal)
       controller.signal.throwIfAborted()
       if (discovery !== controller) return
-      imageModelOptions.value = models
-      const candidates = imageCandidates.value
-      imageModelsMessage.value = candidates.length
-        ? `已读取 ${models.length} 个模型，发现 ${candidates.length} 个生图候选；可在下拉列表切换。`
-        : '服务商未返回可识别的生图模型。可在自定义模型 ID 中指定已开通的模型。'
+      rememberAccountModels(connection.id, baseURL, revision, models)
+      showModels(models)
     } catch (error) {
       if (discovery !== controller) return
+      loadedConnection = ''
       const reason = error instanceof Error ? error.message : '模型列表读取失败。'
       imageModelsMessage.value = controller.signal.aborted
-        ? '读取模型超时，可点击“读取模型”重试。'
+        ? '读取模型超时，可以刷新模型列表重试。'
         : reason
     } finally {
       clearTimeout(timeout)

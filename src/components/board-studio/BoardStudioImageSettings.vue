@@ -61,7 +61,7 @@ watch(
     modelCredentialRevision.value
   ],
   () => {
-    void discoverImageModels(true)
+    void discoverImageModels()
   },
   { immediate: true }
 )
@@ -73,7 +73,7 @@ watch(
     <template #description>为展板出图、拆分和改图选择 API。设计对话模型在「模型」页配置。</template>
     <template #actions>
       <AppButton size="xs" :disabled="imageModelsLoading" @click="discoverImageModels(true)">
-        {{ imageModelsLoading ? '读取中…' : '读取模型' }}
+        {{ imageModelsLoading ? '读取中…' : '刷新模型列表' }}
       </AppButton>
     </template>
     <div class="flex flex-col gap-3">

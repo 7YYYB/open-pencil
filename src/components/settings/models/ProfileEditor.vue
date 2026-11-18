@@ -61,6 +61,7 @@ const {
   agentEffortOptions,
   agentEffortValue,
   modelOptions,
+  accountCatalog,
   selectedModelValue,
   knownModel,
   knownCapabilities,
@@ -88,6 +89,15 @@ const customModelPlaceholder = computed(() => {
 const feedback = useModelProfileFeedback(profile, keyInput, settings)
 const { errors: fieldErrors } = feedback
 const busy = computed(() => saving.value || connectionTestStatus.value === 'testing')
+const accountCatalogStatus = computed(() => {
+  if (accountCatalog.error.value) return accountCatalog.error.value
+  if (accountCatalog.loading.value) return '正在从当前 API 获取模型…'
+  const models = accountCatalog.chatModels.value
+  if (!models) return '从下方配置的 API 获取模型列表。'
+  const imageCount = accountCatalog.imageCount.value
+  const chat = models.length ? `已读取 ${models.length} 个对话模型` : '此 API 未返回可选的对话模型'
+  return `${chat}，${imageCount ? `识别到 ${imageCount} 个生图候选，图像生成可自动选用` : '未识别到生图候选'}。`
+})
 const cloudWorkspaceOptions = computed(() =>
   cloudWorkspaces.value.map((workspace) => ({ value: workspace.id, label: workspace.name }))
 )
@@ -247,26 +257,55 @@ async function remove() {
           </ProviderSettingsField>
 
           <ProviderSettingsField
-            v-if="modelOptions.length && !isHarness"
+            v-if="(modelOptions.length || accountCatalog.supported.value) && !isHarness"
             :label="ai.modelID"
             :hint="agentModelHint"
             :error="fieldErrors.modelID"
             @blur="feedback.blur('modelID')"
           >
             <template #default="{ control }">
-              <AppCombobox
-                v-bind="control"
-                :model-value="selectedModelValue"
-                :options="modelOptions"
-                :label="ai.modelID"
-                :placeholder="ai.selectModel"
-                :search-placeholder="ai.searchModels"
-                :empty-label="common.noResults"
-                @update:model-value="profile.updateModel(String($event))"
-              />
+              <div class="flex items-center gap-2">
+                <div class="min-w-0 flex-1">
+                  <AppCombobox
+                    v-bind="control"
+                    :model-value="selectedModelValue"
+                    :options="modelOptions"
+                    :label="ai.modelID"
+                    :placeholder="ai.selectModel"
+                    :search-placeholder="ai.searchModels"
+                    :empty-label="common.noResults"
+                    @update:model-value="profile.updateModel(String($event))"
+                  />
+                </div>
+                <AppButton
+                  v-if="accountCatalog.supported.value"
+                  variant="outline"
+                  size="sm"
+                  class="shrink-0"
+                  :loading="accountCatalog.loading.value"
+                  :disabled="busy || accountCatalog.loading.value"
+                  @click="accountCatalog.read()"
+                >
+                  获取模型
+                </AppButton>
+              </div>
             </template>
-            <template v-if="agentModelState === 'failed'" #hint>
-              <AppButton variant="outline" size="xs" class="self-start" @click="retryAgentModels">
+            <template #hint>
+              <p
+                v-if="accountCatalog.supported.value"
+                role="status"
+                class="text-2xs leading-relaxed"
+                :class="accountCatalog.error.value ? 'text-error' : 'text-muted'"
+              >
+                {{ accountCatalogStatus }}
+              </p>
+              <AppButton
+                v-else-if="agentModelState === 'failed'"
+                variant="outline"
+                size="xs"
+                class="self-start"
+                @click="retryAgentModels"
+              >
                 {{ ai.retryRequest }}
               </AppButton>
             </template>

@@ -10,6 +10,7 @@ import {
   canRemoveModelProfile,
   createModelProfileDraft,
   modelConnectionUsageCount,
+  modelConnection,
   modelProfile,
   removeModelProfile,
   saveModelProfileDraft,
@@ -19,6 +20,7 @@ import type { ModelPickerLabels } from '@/app/ai/models/picker/options'
 import { settingsErrorMessage } from '@/app/settings/credentials/errors'
 import type { SettingsSaveResult } from '@/app/settings/save-result'
 
+import { useProfileAccountCatalog } from './catalog'
 import { useProfileConnection } from './connection'
 import { useProfileModelSelection } from './selection'
 
@@ -30,8 +32,14 @@ interface ProfileEditorOptions {
 
 export function useModelProfileEditor({ profileId, keyInput, labels: ai }: ProfileEditorOptions) {
   const draft = reactive(createModelProfileDraft(profileId))
+  const connection = useProfileConnection({ draft, keyInput })
+  const accountCatalog = useProfileAccountCatalog({
+    draft,
+    keyInput,
+    keyCleared: connection.keyCleared
+  })
 
-  const selection = useProfileModelSelection(draft, ai)
+  const selection = useProfileModelSelection(draft, ai, undefined, accountCatalog.chatModels)
   const {
     providerDef,
     isACP,
@@ -71,7 +79,7 @@ export function useModelProfileEditor({ profileId, keyInput, labels: ai }: Profi
     keyCleared,
     clearKey: stageKeyRemoval,
     testConnection
-  } = useProfileConnection({ draft, keyInput })
+  } = connection
 
   const dirty = computed(
     () => !isEqual(draft, baseline) || keyInput.value.length > 0 || keyCleared.value
@@ -116,8 +124,10 @@ export function useModelProfileEditor({ profileId, keyInput, labels: ai }: Profi
       if (keyInput.value.trim() || keyCleared.value) {
         await setModelConnectionAPIKey(profile.connectionId, keyInput.value)
         await refreshAIProviderStatus()
-        keyInput.value = ''
       }
+      const savedConnection = modelConnection(profile.connectionId)
+      if (savedConnection) accountCatalog.share(savedConnection)
+      keyInput.value = ''
       saveResult.value = 'saved'
       return 'saved'
     } catch (reason) {
@@ -161,6 +171,7 @@ export function useModelProfileEditor({ profileId, keyInput, labels: ai }: Profi
   )
 
   void refreshKeyStatus()
+  if (profileId) void accountCatalog.read(false)
 
   return {
     draft,
@@ -180,6 +191,7 @@ export function useModelProfileEditor({ profileId, keyInput, labels: ai }: Profi
     agentEffortValue: selection.agentEffortValue,
     providerDisplayName,
     modelOptions,
+    accountCatalog,
     selectedModelValue,
     customModelSelected: selection.customModelSelected,
     supportsCustomModel: selection.supportsCustomModel,

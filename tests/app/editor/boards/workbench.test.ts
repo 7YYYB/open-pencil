@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { isChatModelID, parseImageModels } from '@/app/editor/boards/images/catalog'
+import { isChatModelID, parseAccountModels } from '@/app/ai/models/catalog/connection'
 import { studioIntent } from '@/app/editor/boards/workbench'
 
 test('routes the competition board workflow from a single composer', () => {
@@ -16,7 +16,7 @@ test('routes the competition board workflow from a single composer', () => {
 test('a saved GPT chat ID does not become an image candidate by being listed', () => {
   expect(isChatModelID('gpt-6.2-astra')).toBe(true)
   expect(isChatModelID('gpt-image-custom')).toBe(false)
-  const catalog = parseImageModels(
+  const catalog = parseAccountModels(
     JSON.stringify({
       data: [
         { id: 'gpt-6.2-astra', output_modalities: ['text'] },
