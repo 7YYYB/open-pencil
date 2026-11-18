@@ -11,7 +11,6 @@ import { isVersionHistoryOpen } from '@/app/cloud/integration'
 import { useEditorStore } from '@/app/editor/active-store'
 import { countIssues } from '@/app/editor/design-check/issues'
 import ChatPanel from '@/components/chat/ChatPanel.vue'
-import BoardStudioPanel from '@/components/board-studio/BoardStudioPanel.vue'
 import { CloudVersionHistory } from '@/components/cloud/integration'
 import propertiesTabsTheme from '@/theme/panel/properties-tabs'
 
@@ -57,7 +56,6 @@ const problemCount = computed(() => {
     style="contain: paint layout style"
   >
     <CloudVersionHistory v-if="history" />
-    <BoardStudioPanel v-if="!history && !commenting" />
     <CommentsPanel v-else-if="commenting" />
     <TabsRoot
       v-show="!commenting && !history"
@@ -70,7 +68,7 @@ const problemCount = computed(() => {
           data-test-id="properties-tab-design"
           :class="tabStyles.trigger()"
         >
-          {{ panels.design }}
+          属性
         </TabsTrigger>
         <TabsTrigger value="code" data-test-id="properties-tab-code" :class="tabStyles.trigger()">
           <icon-lucide-code :class="tabStyles.icon()" aria-hidden="true" />
@@ -78,7 +76,7 @@ const problemCount = computed(() => {
         </TabsTrigger>
         <TabsTrigger value="ai" data-test-id="properties-tab-ai" :class="tabStyles.trigger()">
           <icon-lucide-sparkles :class="tabStyles.icon()" aria-hidden="true" />
-          <span :class="tabStyles.label()">{{ panels.ai }}</span>
+          <span :class="tabStyles.label()">创作</span>
         </TabsTrigger>
         <TabsTrigger
           v-if="lints"
@@ -135,7 +133,7 @@ const problemCount = computed(() => {
         :force-mount="true"
         :hidden="activeTab !== 'ai'"
       >
-        <ChatPanel />
+        <ChatPanel studio />
       </TabsContent>
     </TabsRoot>
   </aside>

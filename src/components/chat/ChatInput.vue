@@ -28,10 +28,14 @@ const { ai } = useI18n()
 const {
   status,
   disabled = false,
+  studio = false,
+  prompt,
   dragging = false
 } = defineProps<{
   status: 'ready' | 'submitted' | 'streaming' | 'error'
   disabled?: boolean
+  studio?: boolean
+  prompt?: string
   /** Whether images are being dragged over the chat, which shows where they will go. */
   dragging?: boolean
 }>()
@@ -64,6 +68,7 @@ const {
 const composer = useTemplateRef<{
   restoreDraft: (text: string) => boolean
   insert: (text: string) => void
+  focus: () => void
 }>('composer')
 
 const completions = useComposerCompletions()
@@ -100,7 +105,7 @@ function dropFiles(files: File[]): void {
   void addFiles(files)
 }
 
-defineExpose({ restoreDraft, dropFiles })
+defineExpose({ restoreDraft, dropFiles, focus: () => composer.value?.focus() })
 
 /** A coding agent sets its own thinking effort, so the composer offers none for one. */
 const isAgentProvider = computed(() => providerKind(providerID.value) !== 'api')
@@ -129,6 +134,7 @@ const selectedProfileName = computed(
     ref="composer"
     :status="status"
     :disabled="disabled"
+    :prompt="prompt"
     :completions="completions"
     :take-back="takeBack"
     @submit="(text, afterWork) => emit('submit', takeSubmission(text), afterWork)"
@@ -181,7 +187,7 @@ const selectedProfileName = computed(
         <icon-lucide-mouse-pointer-2 class="size-4" />
       </IconButton>
       <IconButton
-        :label="ai.attachImages"
+        :label="studio ? '添加参考图' : ai.attachImages"
         size="sm"
         :disabled="disabled || images.length >= MAX_IMAGE_ATTACHMENTS"
         @click="openImageDialog()"
@@ -196,8 +202,8 @@ const selectedProfileName = computed(
             <span class="min-w-0 truncate">{{ selectedProfileName }}</span>
           </template>
         </ChatProfileSelect>
-        <ChatThinkingSelect v-if="!isAgentProvider" />
-        <ChatAgentEffortSelect v-else />
+        <ChatThinkingSelect v-if="!studio && !isAgentProvider" />
+        <ChatAgentEffortSelect v-if="!studio && isAgentProvider" />
       </div>
     </template>
   </ChatComposer>

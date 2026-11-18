@@ -3,8 +3,9 @@ import { computed, ref, watch } from 'vue'
 
 import { modelCredentialRevision } from '@/app/ai/models/runtime'
 import {
+  activeImageModel,
   discoverImageModels,
-  imageModelOptions,
+  imageCandidates,
   imageModelsLoading,
   imageModelsMessage
 } from '@/app/editor/boards/images/discovery'
@@ -15,6 +16,7 @@ import {
   boardImageModel
 } from '@/app/editor/boards/images/settings'
 import { openSettingsDialog } from '@/app/settings/dialog'
+import SettingsSection from '@/components/settings/layout/SettingsSection.vue'
 import AppButton from '@/components/ui/button/AppButton.vue'
 import AppInput from '@/components/ui/input/AppInput.vue'
 import AppSelect from '@/components/ui/select/AppSelect.vue'
@@ -30,15 +32,27 @@ const connections = computed(() => [
   { value: 'design', label: '使用现有设计 API' },
   ...boardImageConnections.value.map(({ id, label }) => ({ value: id, label }))
 ])
-const models = computed(() => {
-  const options = imageModelOptions.value.map(({ id, candidate }) => ({
+const models = computed(() => [
+  {
+    value: 'auto',
+    label:
+      activeImageModel.value && !boardImageModel.value
+        ? `自动 · ${activeImageModel.value}`
+        : '自动选择生图模型'
+  },
+  ...imageCandidates.value.map(({ id }) => ({
     value: id,
-    label: `${candidate ? '生图候选 · ' : ''}${id}`
+    label: id
   }))
-  if (boardImageModel.value && !options.some((option) => option.value === boardImageModel.value)) {
-    options.unshift({ value: boardImageModel.value, label: boardImageModel.value })
+])
+const chosenModel = computed({
+  get: () =>
+    imageCandidates.value.some(({ id }) => id === boardImageModel.value)
+      ? boardImageModel.value
+      : 'auto',
+  set: (id: string) => {
+    boardImageModel.value = id === 'auto' ? '' : id
   }
-  return options
 })
 watch(
   () => [
@@ -54,30 +68,34 @@ watch(
 </script>
 
 <template>
-  <section class="flex flex-col gap-2 rounded border border-border p-2" aria-label="生图模型与 API">
-    <div class="flex items-center justify-between gap-2">
-      <strong class="text-xs">生图模型 · 自动读取</strong>
+  <SettingsSection>
+    <template #title>图像生成</template>
+    <template #description>为展板出图、拆分和改图选择 API。设计对话模型在「模型」页配置。</template>
+    <template #actions>
       <AppButton size="xs" :disabled="imageModelsLoading" @click="discoverImageModels(true)">
         {{ imageModelsLoading ? '读取中…' : '读取模型' }}
       </AppButton>
+    </template>
+    <div class="flex flex-col gap-3">
+      <AppSelect v-model="connection" label="生图 API 连接" :options="connections" />
+      <AppSelect
+        v-model="chosenModel"
+        label="生图模型"
+        :options="models"
+        placeholder="自动读取后在此选择模型"
+      />
+      <p class="text-xs text-muted">{{ imageModelsMessage }}</p>
+      <p v-if="activeImageModel" class="text-xs text-muted">当前生图模型 {{ activeImageModel }}</p>
+      <div class="flex gap-2">
+        <AppButton size="xs" @click="openSettingsDialog('ai')">管理 API 连接</AppButton>
+        <AppButton size="xs" @click="advanced = !advanced">{{
+          advanced ? '收起自定义模型' : '自定义模型 ID'
+        }}</AppButton>
+      </div>
+      <label v-if="advanced" class="flex flex-col gap-1 text-xs">
+        自定义图像模型 ID
+        <AppInput v-model="boardImageModel" placeholder="服务商提供的准确模型 ID" />
+      </label>
     </div>
-    <AppSelect v-model="connection" label="生图 API 连接" :options="connections" />
-    <AppSelect
-      v-model="boardImageModel"
-      label="生图模型"
-      :options="models"
-      placeholder="自动读取后在此选择模型"
-    />
-    <p class="text-xs text-muted">{{ imageModelsMessage }}</p>
-    <div class="flex gap-2">
-      <AppButton size="xs" @click="openSettingsDialog('ai')">管理 API 连接</AppButton>
-      <AppButton size="xs" @click="advanced = !advanced">{{
-        advanced ? '收起高级设置' : '高级设置'
-      }}</AppButton>
-    </div>
-    <label v-if="advanced" class="flex flex-col gap-1 text-xs">
-      自定义图像模型 ID（仅用于服务商不返回列表时）
-      <AppInput v-model="boardImageModel" placeholder="服务商提供的准确模型 ID" />
-    </label>
-  </section>
+  </SettingsSection>
 </template>

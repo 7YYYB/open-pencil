@@ -15,16 +15,19 @@ export async function generateWholeBoard(
   store: EditorStore,
   brief: string,
   references: ImageAttachmentDraft[],
-  options: BoardJobOptions
+  options: BoardJobOptions & { landscape?: boolean; referenceId?: string }
 ) {
   if (!brief.trim()) throw new Error('请先填写主题和设计要求。')
   const graph = store.graph
   const page = store.state.currentPageId
   const selected = selectedBoard(store)
-  const landscape = selected ? selected.width > selected.height : false
+  const landscape = options.landscape ?? (selected ? selected.width > selected.height : false)
   const images = await Promise.all(
     references.map(async ({ file }) => (await prepareImageAttachment(file, 1536)).data)
   )
+  if (images.length === 0 && options.referenceId) {
+    images.push((await captureSource(store, options.referenceId)).bytes)
+  }
   options.progress?.('正在生成完整展板效果图…')
   const bytes = await generateBoardImage(
     {
@@ -40,17 +43,17 @@ export async function generateWholeBoard(
     throw new Error('页面已切换，未插入生成效果图。')
   // Each additional concept gets its own board, so the chosen draft remains intact.
   let board = selected && graph.getNode(selected.id)
-  if (!board || board.childIds.length || board.locked) {
+  if (!board || board.childIds.length || board.locked || landscape !== board.width > board.height) {
     createBoard(store, landscape)
     board = selectedBoard(store)
   }
   if (!board) throw new Error('无法创建展板。')
   const destination = board
   const figma = makeFigmaFromStore(store)
-  store.recordEdit({ label: '生成完整展板效果图', restoresSelection: true }, () => {
+  const nodeId = store.recordEdit({ label: '生成完整展板效果图', restoresSelection: true }, () => {
     const image = figma.createImage(bytes)
     const node = graph.createNode('RECTANGLE', destination.id, {
-      name: '完整效果图 · 选中后拆分',
+      name: '展板方案',
       x: 0,
       y: 0,
       width: destination.width,
@@ -67,14 +70,18 @@ export async function generateWholeBoard(
       ]
     })
     store.select([node.id])
+    return node.id
   })
   store.zoomToSelection()
-  return '完整效果图已生成。满意后点击“拆分元素与文字”；再次生成会新增一张候选展板。'
+  return { nodeId, text: '展板方案已放到画布。可以再做一版，或拆分这张的素材与文字。' }
 }
 
-export async function splitSelectedBoard(store: EditorStore, options: BoardJobOptions) {
-  const source = selectedImage(store)
-  const prepared = await prepareBoardSplit(store, source.id, options)
+export async function splitSelectedBoard(
+  store: EditorStore,
+  options: BoardJobOptions,
+  nodeId = selectedImage(store).id
+) {
+  const prepared = await prepareBoardSplit(store, nodeId, options)
   const figma = makeFigmaFromStore(store)
   const result = store.recordEdit({ label: '拆分展板元素与文字', restoresSelection: true }, () => {
     const layers = prepared.commit(figma)
@@ -84,16 +91,24 @@ export async function splitSelectedBoard(store: EditorStore, options: BoardJobOp
   await ensureGraphFonts(store.graph, result.textIds, store.renderer)
   result.textIds.forEach((id) => store.runLayoutForNode(id))
   store.requestRender()
-  return `已拆出 ${result.elements} 个透明元素、${result.textIds.length} 个文字层。${result.uncertainText ? `${result.uncertainText} 处文字标为“待校对”。` : ''}${result.warning}可在图层列表选择元素，或双击进入分组。`
+  return {
+    nodeId: result.id,
+    text: `已拆出 ${result.elements} 个图片元素和 ${result.textIds.length} 个文字层。${result.uncertainText ? `有 ${result.uncertainText} 处识别结果待校对。` : ''}${result.warning}`
+  }
 }
 
 export async function regenerateSelectedElement(
   store: EditorStore,
   instruction: string,
-  options: BoardJobOptions
+  options: BoardJobOptions,
+  nodeId = selectedImage(store).id,
+  references: ImageAttachmentDraft[] = []
 ) {
   if (!instruction.trim()) throw new Error('请先填写所选元素的修改要求。')
-  const source = await captureSource(store, selectedImage(store).id)
+  const source = await captureSource(store, nodeId)
+  const additionalReferences = await Promise.all(
+    references.map(async ({ file }) => (await prepareImageAttachment(file, 1536)).data)
+  )
   const raster = await decodeRaster(source.bytes)
   let transparent = false
   for (let offset = 3; offset < raster.data.length; offset += 4) {
@@ -107,6 +122,7 @@ export async function regenerateSelectedElement(
     {
       prompt: `只修改这个独立元素：${instruction}\n保持画幅、主体完整性和原来的透明区域。不要添加任何其他展板内容。`,
       reference: source.bytes,
+      additionalReferences,
       transparent,
       size: source.node.width > source.node.height ? '1536x1024' : '1024x1536'
     },
@@ -124,5 +140,5 @@ export async function regenerateSelectedElement(
     })
   })
   store.requestRender()
-  return '所选元素已更新，位置、大小及其他图层保留，可撤销。'
+  return { nodeId, text: '已在原位更新所选图片。' }
 }

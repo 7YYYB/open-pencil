@@ -4,6 +4,12 @@ import { renderForModel } from '@/app/ai/tools/vision/render'
 import type { EditorStore } from '@/app/editor/active-store'
 
 export function selectedImage(store: EditorStore): SceneNode {
+  const image = imageAtSelection(store)
+  if (!image) throw new Error('请单独选中一张完整效果图或一个图片元素。')
+  return image
+}
+
+export function imageAtSelection(store: EditorStore): SceneNode | undefined {
   const selected = [...store.state.selectedIds]
   const first = selected.length === 1 ? store.graph.getNode(selected[0]) : undefined
   const images =
@@ -19,9 +25,9 @@ export function selectedImage(store: EditorStore): SceneNode {
     image.childIds.length ||
     !image.fills.some((fill) => fill.type === 'IMAGE')
   ) {
-    throw new Error('请单独选中一张完整效果图或一个图片元素。')
+    return undefined
   }
-  if (image.locked || !image.parentId) throw new Error('请先解锁所选图片。')
+  if (image.locked || !image.parentId) return undefined
   return image
 }
 

@@ -15,11 +15,13 @@ import InputGroup from '@/components/ui/input/InputGroup.vue'
 const {
   status,
   disabled = false,
+  prompt,
   completions = [],
   takeBack
 } = defineProps<{
   status: ChatStatus
   disabled?: boolean
+  prompt?: string
   /** What `@` and `/` offer; read once, when the field mounts. */
   completions?: CompletionSource[]
   /** Messages waiting to be sent, taken back into the field by Up on its first line. */
@@ -38,11 +40,11 @@ const { ai } = useI18n()
 const working = computed(() => status === 'streaming' || status === 'submitted')
 const host = useTemplateRef<HTMLDivElement>('host')
 const editor = useChatEditor(host, {
-  label: () => ai.value.describeChange,
+  label: () => prompt ?? ai.value.describeChange,
   placeholder: () =>
     working.value
       ? ai.value.queueMessage({ shortcut: formatShortcut(CHAT_COMPOSER_KEYS.followUp) ?? '' })
-      : ai.value.describeChange,
+      : (prompt ?? ai.value.describeChange),
   editable: () => !disabled,
   attributes: { 'data-test-id': 'chat-input' },
   completions,

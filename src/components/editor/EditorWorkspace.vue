@@ -18,6 +18,7 @@ import { loadEditorLayout, saveEditorLayout } from '@/app/shell/layout-storage'
 import { appMenuShortcut } from '@/app/shell/menu/shortcut'
 import { remToPx } from '@/app/shell/root-font-size'
 import type { Tab } from '@/app/tabs'
+import BoardStudioCanvasActions from '@/components/board-studio/BoardStudioCanvasActions.vue'
 import CanvasSplitRoot from '@/components/canvas/CanvasSplitRoot.vue'
 import FloatingChat from '@/components/chat/FloatingChat.vue'
 import CollabPanel from '@/components/collab-panel/CollabPanel.vue'
@@ -191,6 +192,7 @@ const { pending: roomPending } = useRoomActions()
       <div class="relative flex min-w-0 flex-1">
         <CanvasSplitRoot />
         <ActiveRoomOverlay />
+        <BoardStudioCanvasActions v-if="showPanels" />
         <EditorToolbar v-if="showPanels || (toolsStay && !canvasAlone)" />
         <template v-if="!showPanels">
           <WorkspacePill

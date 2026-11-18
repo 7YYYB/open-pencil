@@ -29,6 +29,7 @@ import {
   type SettingsSection
 } from '@/app/settings/dialog'
 import { provideSettingsNavigation } from '@/app/settings/navigation/use'
+import BoardStudioImageSettings from '@/components/board-studio/BoardStudioImageSettings.vue'
 import { CloudSettingsSection } from '@/components/cloud/integration'
 import ChatSettingsSection from '@/components/settings/chat/ChatSettingsSection.vue'
 import DiagnosticsSettingsPanel from '@/components/settings/diagnostics/DiagnosticsSettingsPanel.vue'
@@ -93,6 +94,7 @@ const groups = computed<{ label: string; sections: SectionItem[] }[]>(() => [
     label: settings.value.groupAI,
     sections: [
       { value: 'ai', label: settings.value.models, icon: IconSparkles },
+      { value: 'image', label: '图像生成', icon: IconSparkles },
       { value: 'tools', label: settings.value.toolAccess, icon: IconSlidersHorizontal },
       { value: 'skills', label: settings.value.skills, icon: IconBookOpen },
       { value: 'prompts', label: settings.value.prompts, icon: IconMessageSquareText },
@@ -215,6 +217,9 @@ function onOpenChange(open: boolean): void {
             <ChatSettingsSection />
           </ModelsPanel>
         </section>
+      </AppTabsContent>
+      <AppTabsContent value="image" as-child>
+        <SettingsPage><BoardStudioImageSettings /></SettingsPage>
       </AppTabsContent>
       <AppTabsContent value="tools" as-child>
         <ToolAccessSettingsPanel target="ai" />

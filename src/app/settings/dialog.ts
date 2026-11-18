@@ -9,6 +9,7 @@ export type SettingsSection =
   | 'notifications'
   | 'cloud'
   | 'ai'
+  | 'image'
   | 'tools'
   | 'skills'
   | 'prompts'

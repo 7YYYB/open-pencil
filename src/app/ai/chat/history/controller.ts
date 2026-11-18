@@ -226,6 +226,18 @@ export function createConversationHistory<TChat extends HistoryChat>(
   function initialize() {
     return serialize(loadDocument)
   }
+
+  /** Records a canvas task in its conversation without making a language-model request. */
+  function appendLocal(id: string, additions: readonly UIMessage[]) {
+    return serialize(async () => {
+      if (disposed || current.value?.id !== id || readOnly.value) return
+      const live = session.chat
+      const next = [...(live?.messages ?? messages.value), ...additions]
+      if (live) live.messages = next
+      messages.value = next
+      await flush()
+    })
+  }
   /**
    * Saves the conversation and releases its agent before this runtime is replaced. No chat starts
    * afterwards; a save that failed is tried again by the next call.
@@ -287,6 +299,7 @@ export function createConversationHistory<TChat extends HistoryChat>(
     busy,
     storageError,
     initialize,
+    appendLocal,
     dispose,
     ensureChat,
     flush,

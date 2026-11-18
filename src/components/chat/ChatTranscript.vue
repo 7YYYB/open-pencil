@@ -149,12 +149,13 @@ const { arrivedState, resumeFollowing } = useScrollFollowing(
       <AppPlaceholder
         v-if="messages.length === 0 && sending === null && !compacting && !reviewing"
         data-test-id="chat-empty-state"
-        :label="ai.describeCreateOrChange"
+        :label="$slots.welcome ? '开始创作' : ai.describeCreateOrChange"
         :ui="{ root: 'h-full' }"
       >
         <template #icon>
           <icon-lucide-message-circle class="size-5" />
         </template>
+        <slot name="welcome" />
       </AppPlaceholder>
 
       <!-- Messages -->
@@ -184,15 +185,25 @@ const { arrivedState, resumeFollowing } = useScrollFollowing(
             :message="msg"
             :presentation="presentations?.[msg.id]"
             :streaming="running && msg.role === 'assistant' && index === messages.length - 1"
-            :can-regenerate="idle && msg.id === lastMessage?.id && msg.role === 'assistant'"
+            :can-regenerate="
+              idle &&
+              msg.id === lastMessage?.id &&
+              msg.role === 'assistant' &&
+              !msg.parts.some((part) => part.type === 'data-board-result')
+            "
             :can-retry="idle && msg.id === lastMessage?.id && msg.role === 'user'"
-            :can-edit="idle && msg.id === editableRequestId"
+            :can-edit="
+              idle &&
+              msg.id === editableRequestId &&
+              !lastMessage?.parts.some((part) => part.type === 'data-board-result')
+            "
             :reasoning-display="reasoningDisplay"
             @regenerate="emit('regenerate')"
             @revert="emit('revert', msg.id)"
             @restore="emit('restore', msg.id)"
             @edit="(text) => emit('edit', msg.id, text)"
           />
+          <slot name="result" :message="msg" />
         </template>
 
         <div v-if="sending !== null" class="flex justify-end" data-test-id="chat-sending-message">

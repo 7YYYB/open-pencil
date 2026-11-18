@@ -3,3 +3,5 @@
 - Create reference-guided layered competition boards with image API assets, transparent PNG title lettering, and PNG/JPEG exports with 300 ppi metadata.
 
 - Discover image models from existing API connections and generate complete board previews, then reconstruct independently editable image elements and text layers with per-element regeneration.
+
+- Create and compare board drafts in the design conversation, split or revise selected images from the canvas, and configure image models in Settings.

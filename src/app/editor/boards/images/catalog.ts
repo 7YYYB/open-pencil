@@ -15,6 +15,13 @@ export interface ImageModelOption {
   candidate: boolean
 }
 
+export function isChatModelID(id: string): boolean {
+  return (
+    /(?:^|[/_-])(?:gpt-[456](?:[.\d-]|$)|chatgpt|claude|deepseek|qwen|gemini)/i.test(id) &&
+    !/(?:image|imagen|banana)/i.test(id)
+  )
+}
+
 function imagePreference(id: string) {
   if (/gpt-image/i.test(id)) return 3
   if (/seedream|flux|imagen/i.test(id)) return 2
@@ -30,7 +37,9 @@ export function parseImageModels(text: string): ImageModelOption[] {
     .map((model) => ({
       id: model.id,
       candidate:
-        model.supported_endpoints?.some((endpoint) => endpoint.includes('images/')) === true ||
+        model.supported_endpoints?.some((endpoint) =>
+          /images\/(?:generations|edits)/i.test(endpoint)
+        ) === true ||
         model.output_modalities?.includes('image') === true ||
         /(?:gpt-image|dall-e|flux|seedream|imagen|stable-diffusion|image-generation)/i.test(
           model.id

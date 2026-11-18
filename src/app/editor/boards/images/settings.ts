@@ -52,15 +52,3 @@ export const boardImageModel = computed({
     legacyImageModel.value = ''
   }
 })
-
-export const boardImageSetup = computed(() => {
-  const connection = boardImageConnection.value
-  const label = boardImageConnections.value.find((item) => item.id === connection?.id)?.label ?? ''
-  if (!connection || !supportsImageAPI(connection)) {
-    return { available: false, label, reason: '请选择支持 OpenAI 图像接口的 API 连接。' }
-  }
-  if (!boardImageModel.value.trim()) {
-    return { available: false, label, reason: '正在等待自动读取生图模型；也可点击“读取模型”。' }
-  }
-  return { available: true, label, reason: '使用已保存的 API 密钥；接口须支持图像生成或编辑。' }
-})

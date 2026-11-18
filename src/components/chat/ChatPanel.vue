@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { Chat } from '@ai-sdk/vue'
 import type { UIMessage } from 'ai'
-import { computed, provide, shallowRef, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, provide, shallowRef, useTemplateRef, watch } from 'vue'
 
+import { resolveEditorProfile } from '@open-pencil/core'
 import { providerKind } from '@open-pencil/core/constants'
 import { useI18n } from '@open-pencil/vue/i18n'
 
@@ -40,11 +41,13 @@ import {
   getActiveEditorStoreOrNull,
   useEditorStore
 } from '@/app/editor/active-store'
-import { onBoardDesignRequested } from '@/app/editor/boards/design'
+import { onStudioAction, studioResult } from '@/app/editor/boards/workbench'
 import { useDateFormat } from '@/app/i18n/date'
 import { openSettingsDialog } from '@/app/settings/dialog'
 import { openExternalLink, toast } from '@/app/shell/ui'
 import { activeTab } from '@/app/tabs'
+import BoardStudioResult from '@/components/board-studio/BoardStudioResult.vue'
+import { useBoardStudio } from '@/components/board-studio/useBoardStudio'
 import ChatContextMeter from '@/components/chat/ChatContextMeter.vue'
 import ChatContextWarning from '@/components/chat/ChatContextWarning.vue'
 import ChatCreditBalance from '@/components/chat/ChatCreditBalance.vue'
@@ -60,12 +63,15 @@ import ChatSubagentThread from '@/components/chat/subagent/ChatSubagentThread.vu
 import { useSubagentThread } from '@/components/chat/subagent/useSubagentThread'
 import { CHAT_CHANGE_REVIEW } from '@/components/chat/tool/context'
 import AppButton from '@/components/ui/button/AppButton.vue'
+import IconButton from '@/components/ui/button/IconButton.vue'
 import { useImageDrop } from '@/components/ui/drop/useImageDrop'
 import AppAlert from '@/components/ui/feedback/AppAlert.vue'
 import PanelDrillIn from '@/components/ui/panel/PanelDrillIn.vue'
 
+const { studio = false } = defineProps<{ studio?: boolean }>()
 const {
   isConfigured,
+  activeTab: propertiesTab,
   ensureChat,
   compactAgent,
   history,
@@ -118,6 +124,7 @@ const submission = useChatSubmission({
 const chatInput = useTemplateRef<{
   restoreDraft: (submission: ChatSubmission) => void
   dropFiles: (files: File[]) => void
+  focus: () => void
 }>('chatInput')
 const panel = useTemplateRef<HTMLElement>('panel')
 // Images dropped anywhere on the chat go to the composer, when there is one to take them.
@@ -163,13 +170,30 @@ void history.initialize().catch(() => {
 })
 
 const messages = computed(() => chat.value?.messages ?? history.messages.value)
+const workbench = useBoardStudio({
+  editor: panelEditor,
+  conversation: () => history.current.value?.id,
+  messages: () => messages.value,
+  append: history.appendLocal,
+  restore: (message) => chatInput.value?.restoreDraft(message)
+})
+const studioPrompt = computed(() => {
+  if (!studio) return undefined
+  if (workbench.mode.value === 'edit-image') return '描述这张图要怎么改…'
+  return workbench.selection.value.length
+    ? '说说选中的内容怎么改…'
+    : '描述你要做的展板，可粘贴或拖入参考图…'
+})
 /**
  * The field waits while attachments are prepared or the history switches conversations. A send
  * opens the chat through the history itself, which must not lock the field for those moments:
  * it would flash disabled and swap its placeholder on every message.
  */
 const inputLocked = computed(
-  () => submission.busy.value || (history.busy.value && submission.sending.value === null)
+  () =>
+    (studio && workbench.busy.value) ||
+    submission.busy.value ||
+    (history.busy.value && submission.sending.value === null)
 )
 const subagentThread = useSubagentThread(messages, () => history.current.value?.id)
 const subagentHeader = useTemplateRef<{ focus: () => void }>('subagentHeader')
@@ -280,6 +304,7 @@ async function historyAction(action: () => Promise<unknown>) {
   const left = history.current.value?.id
   let switched = false
   submission.cancel()
+  if (studio) workbench.stop()
   queueHeld = true
   try {
     await chat.value?.stop()
@@ -382,13 +407,61 @@ function sendOrQueue(message: ChatSubmission, afterWork: boolean) {
     enqueueMessage(message, afterWork ? 'follow-up' : 'steer')
     return
   }
+  if (studio) {
+    if (!resolveEditorProfile(panelEditor.state).edits) {
+      chatInput.value?.restoreDraft(message)
+      return
+    }
+    const intent = workbench.intent(message)
+    if (intent) {
+      void workbench
+        .run(intent, message)
+        .then((accepted) => (accepted ? undefined : chatInput.value?.restoreDraft(message)))
+      return
+    }
+    if (!isConfigured.value) {
+      workbench.error.value = '请先在「设置 → 模型」中连接设计对话模型。'
+      chatInput.value?.restoreDraft(message)
+      return
+    }
+    workbench.error.value = ''
+    message = workbench.withSelection(message)
+  }
   void submitMessage(message)
 }
-onBoardDesignRequested(({ editor, submission: message, accept }) => {
-  if (editor !== panelEditor || !isConfigured.value || inputLocked.value || history.readOnly.value)
+onStudioAction(async ({ editor, action, nodeId }) => {
+  if (!studio || editor !== panelEditor || editor !== getActiveEditorStoreOrNull()) return
+  if (action === 'properties') {
+    propertiesTab.value = 'design'
     return
-  accept()
-  sendOrQueue(message, true)
+  }
+  if (action === 'export-png' || action === 'export-jpg') {
+    await workbench.save(action === 'export-png' ? 'png' : 'jpg')
+    return
+  }
+  if (
+    inputLocked.value ||
+    status.value === 'streaming' ||
+    status.value === 'submitted' ||
+    history.readOnly.value
+  ) {
+    toast.error('当前创作尚未结束，请稍后再试。')
+    return
+  }
+  if (action === 'split' || action === 'generate') {
+    const text = action === 'split' ? '拆分图层' : '再做一版，尝试另一种构图'
+    await workbench.run(
+      action,
+      { modelText: text, displayText: text, images: [], nodes: [] },
+      nodeId,
+      false
+    )
+  } else {
+    workbench.mode.value = action
+    workbench.error.value = ''
+    await nextTick()
+    chatInput.value?.focus()
+  }
 })
 // Once a reply ends, what waited goes next, one message per reply; a failed reply keeps them.
 function sendNextQueued() {
@@ -482,7 +555,8 @@ watch(
 )
 
 function handleStop() {
-  submission.stop()
+  if (studio && workbench.busy.value) workbench.stop()
+  else submission.stop()
 }
 </script>
 
@@ -512,24 +586,40 @@ function handleStop() {
       @delete="historyAction(() => history.remove($event))"
     >
       <template #actions>
+        <IconButton
+          v-if="studio"
+          label="图像生成设置"
+          size="xs"
+          @click="openSettingsDialog('image')"
+        >
+          <icon-lucide-settings-2 class="size-3.5" />
+        </IconButton>
         <ChatContextMeter
-          v-if="context.limits.value && context.used.value !== null && context.compactsAt.value"
+          v-if="
+            !studio &&
+            context.limits.value &&
+            context.used.value !== null &&
+            context.compactsAt.value
+          "
           :used="context.used.value"
           :context-window="context.limits.value.contextWindow"
           :compacts-at="context.compactsAt.value"
           :replying="status === 'streaming' || status === 'submitted'"
         />
         <!-- Without a known window there is no meter, and Cloud credits show on their own. -->
-        <ChatCreditBalance v-else :replying="status === 'streaming' || status === 'submitted'" />
-        <ChatFollowAgentsToggle />
+        <ChatCreditBalance
+          v-else-if="!studio"
+          :replying="status === 'streaming' || status === 'submitted'"
+        />
+        <ChatFollowAgentsToggle v-if="!studio" />
       </template>
     </ChatHistory>
     <p v-if="history.storageError.value" role="alert" class="px-3 py-2 text-xs text-error">
       {{ ai.chatStorageFailed }}
     </p>
-    <ChatProviderSetup v-if="!isConfigured" />
+    <ChatProviderSetup v-if="!isConfigured && !studio" />
 
-    <template v-if="isConfigured || messages.length">
+    <template v-if="studio || isConfigured || messages.length">
       <!-- The thread's way back is in the header, which takes focus as the thread opens. -->
       <PanelDrillIn
         :open="subagentThread.open.value"
@@ -553,7 +643,11 @@ function handleStop() {
           :interrupted="Boolean(history.current.value?.interrupted) && status === 'ready'"
           :queued="queuedMessages"
           :steers="providerKind(providerID) === 'api'"
-          :sending="submission.sending.value?.displayText ?? null"
+          :sending="
+            (studio ? workbench.pending.value?.displayText : undefined) ??
+            submission.sending.value?.displayText ??
+            null
+          "
           :compacting="compaction.compacting.value"
           :reviewing="review.reviewing.value"
           :reviews-actionable="reviewReady"
@@ -562,6 +656,7 @@ function handleStop() {
           :nodes-live="!history.readOnly.value"
           :interactive="
             chat !== null &&
+            (!studio || !workbench.busy.value) &&
             !submission.busy.value &&
             !compaction.compacting.value &&
             !review.reviewing.value
@@ -578,7 +673,16 @@ function handleStop() {
               nodes: []
             })
           "
-        />
+        >
+          <template v-if="studio" #welcome>
+            <p class="max-w-60 text-xs leading-relaxed text-muted">
+              把主题、文案和参考图发到这里。方案会出现在画布上，选中喜欢的图即可拆分或修改。
+            </p>
+          </template>
+          <template v-if="studio && !history.readOnly.value" #result="{ message }">
+            <BoardStudioResult :result="studioResult(message)" />
+          </template>
+        </ChatTranscript>
       </PanelDrillIn>
 
       <p v-if="agentHistoryReadOnly" role="status" class="px-3 py-2 text-xs text-muted">
@@ -624,10 +728,53 @@ function handleStop() {
         :compacting="compaction.compacting.value"
         @compact="compactConversation()"
       />
+      <div
+        v-if="studio && workbench.busy.value"
+        class="flex items-center gap-2 px-3 py-2 text-xs text-muted"
+        role="status"
+      >
+        <icon-lucide-loader-circle
+          class="size-3.5 animate-spin motion-reduce:animate-none"
+          aria-hidden="true"
+        />
+        {{ workbench.progress.value }}
+      </div>
+      <AppAlert
+        v-if="studio && workbench.error.value"
+        class="mx-2.5 mb-2"
+        tone="error"
+        heading="操作未完成"
+        :description="workbench.error.value"
+      >
+        <template #actions>
+          <AppButton v-if="!isConfigured" size="xs" @click="openSettingsDialog('ai')"
+            >模型设置</AppButton
+          >
+          <AppButton size="xs" @click="openSettingsDialog('image')">图像生成设置</AppButton>
+        </template>
+      </AppAlert>
+      <div
+        v-if="studio && (workbench.selection.value.length || workbench.mode.value)"
+        class="flex items-center gap-2 px-3 pb-1 text-2xs text-muted"
+      >
+        <icon-lucide-mouse-pointer-2 class="size-3.5 shrink-0" aria-hidden="true" />
+        <span class="min-w-0 flex-1 truncate"
+          >{{ workbench.mode.value === 'edit-image' ? '改图 · ' : ''
+          }}{{
+            workbench.image.value?.name ??
+            workbench.selection.value.map((node) => node.name).join('、')
+          }}</span
+        >
+        <AppButton v-if="workbench.mode.value" size="xs" @click="workbench.mode.value = null"
+          >取消</AppButton
+        >
+      </div>
       <ChatInput
-        v-if="isConfigured && !agentHistoryReadOnly && !history.readOnly.value"
+        v-if="(studio || isConfigured) && !agentHistoryReadOnly && !history.readOnly.value"
         ref="chatInput"
-        :status="status"
+        :status="studio && workbench.busy.value ? 'streaming' : status"
+        :studio="studio"
+        :prompt="studioPrompt"
         :dragging="draggingImages"
         :disabled="inputLocked"
         @submit="sendOrQueue"
